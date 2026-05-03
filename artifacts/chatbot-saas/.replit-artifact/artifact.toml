@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "AI Chatbot SaaS"
+version = "1.0.0"
+id = "artifacts/chatbot-saas"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18501
+
+[services.development]
+run = "pnpm --filter @workspace/chatbot-saas run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/chatbot-saas", "run", "build" ]
+publicDir = "artifacts/chatbot-saas/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18501"
+BASE_PATH = "/"
