@@ -1,5 +1,6 @@
 import { useState, FormEvent } from "react";
 import { useLocation } from "wouter";
+import { Zap, Eye, EyeOff, Bot, Puzzle, Shield } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function Login() {
@@ -7,6 +8,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { login, register } = useAuth();
@@ -30,30 +32,103 @@ export default function Login() {
     }
   }
 
+  const features = [
+    {
+      icon: Bot,
+      title: "Multi-provider AI",
+      desc: "Claude, GPT-4o, Gemini, and 100+ open-source models via OpenRouter",
+    },
+    {
+      icon: Puzzle,
+      title: "One-line embed",
+      desc: "Drop a single script tag on any website — no framework needed",
+    },
+    {
+      icon: Shield,
+      title: "API keys stay server-side",
+      desc: "Your credentials are never exposed in the browser",
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600 text-white text-2xl mb-4 shadow-lg shadow-blue-600/30">
-            🤖
+    <div className="min-h-screen bg-[#0f172a] flex">
+      {/* Left panel */}
+      <div className="hidden lg:flex flex-col w-[480px] flex-shrink-0 px-12 py-10 border-r border-white/5">
+        <div className="flex items-center gap-2.5 mb-auto">
+          <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
+            <Zap className="w-4 h-4 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">BotBuilder</h1>
-          <p className="text-slate-400 mt-1">AI chatbots for every business</p>
+          <span className="text-white font-semibold text-[17px]">BotBuilder</span>
         </div>
 
-        <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-8 shadow-2xl">
-          <div className="flex rounded-xl bg-white/5 p-1 mb-6">
+        <div className="py-16">
+          <div className="inline-flex items-center gap-1.5 bg-indigo-500/10 text-indigo-400 text-xs font-semibold px-3 py-1.5 rounded-full border border-indigo-500/20 mb-6">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+            AI Chatbot Platform
+          </div>
+          <h1 className="text-4xl font-bold text-white leading-tight mb-4">
+            Build AI chatbots<br />
+            <span className="text-indigo-400">for any business</span>
+          </h1>
+          <p className="text-slate-400 text-base leading-relaxed mb-10">
+            Create custom AI assistants, embed them on client websites, and capture leads — all from one dashboard.
+          </p>
+
+          <div className="space-y-5">
+            {features.map(({ icon: Icon, title, desc }) => (
+              <div key={title} className="flex items-start gap-4">
+                <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Icon className="w-4 h-4 text-indigo-400" />
+                </div>
+                <div>
+                  <p className="text-white text-sm font-semibold mb-0.5">{title}</p>
+                  <p className="text-slate-500 text-sm leading-relaxed">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-slate-600 text-xs">
+          © {new Date().getFullYear()} BotBuilder. Built for agencies & freelancers.
+        </p>
+      </div>
+
+      {/* Right panel — form */}
+      <div className="flex-1 flex items-center justify-center px-6 py-10">
+        <div className="w-full max-w-[380px]">
+          {/* Mobile logo */}
+          <div className="flex items-center gap-2 mb-8 lg:hidden">
+            <div className="w-7 h-7 bg-indigo-500 rounded-lg flex items-center justify-center">
+              <Zap className="w-3.5 h-3.5 text-white" />
+            </div>
+            <span className="text-white font-semibold text-base">BotBuilder</span>
+          </div>
+
+          <div className="mb-7">
+            <h2 className="text-2xl font-bold text-white mb-1">
+              {tab === "login" ? "Welcome back" : "Create account"}
+            </h2>
+            <p className="text-slate-500 text-sm">
+              {tab === "login"
+                ? "Sign in to your dashboard"
+                : "Start building AI chatbots today"}
+            </p>
+          </div>
+
+          {/* Tab toggle */}
+          <div className="flex bg-white/5 rounded-xl p-1 mb-6 border border-white/5">
             {(["login", "register"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => { setTab(t); setError(""); }}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
                   tab === t
-                    ? "bg-blue-600 text-white shadow-sm"
-                    : "text-slate-400 hover:text-white"
+                    ? "bg-indigo-500 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
                 }`}
               >
-                {t === "login" ? "Sign In" : "Create Account"}
+                {t === "login" ? "Sign In" : "Register"}
               </button>
             ))}
           </div>
@@ -61,7 +136,7 @@ export default function Login() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {tab === "register" && (
               <div>
-                <label className="block text-sm text-slate-300 mb-1.5 font-medium">
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
                   Username
                 </label>
                 <input
@@ -70,12 +145,14 @@ export default function Login() {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="yourname"
                   required
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  autoComplete="username"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                 />
               </div>
             )}
+
             <div>
-              <label className="block text-sm text-slate-300 mb-1.5 font-medium">
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">
                 Email
               </label>
               <input
@@ -84,26 +161,43 @@ export default function Login() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 required
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-300 mb-1.5 font-medium">
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                minLength={6}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                autoComplete="email"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPass ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Min. 6 characters"
+                  required
+                  minLength={6}
+                  autoComplete={tab === "login" ? "current-password" : "new-password"}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 pr-10 text-white placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass((s) => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  aria-label={showPass ? "Hide password" : "Show password"}
+                >
+                  {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-3 rounded-xl">
+              <div
+                role="alert"
+                className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl"
+              >
+                <span className="mt-0.5 flex-shrink-0">⚠</span>
                 {error}
               </div>
             )}
@@ -111,8 +205,14 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors text-sm mt-2"
+              className="w-full bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-xl transition-colors text-sm mt-1 flex items-center justify-center gap-2"
             >
+              {loading && (
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
               {loading
                 ? "Please wait..."
                 : tab === "login"

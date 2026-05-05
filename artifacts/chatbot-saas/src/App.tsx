@@ -4,29 +4,25 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import BotEditor from "./pages/BotEditor";
+import Analytics from "./pages/Analytics";
 import Preview from "./pages/Preview";
+import { Loader2 } from "lucide-react";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, loading } = useAuth();
   const [, navigate] = useLocation();
 
   useEffect(() => {
-    if (!loading && !user) {
-      navigate("/login");
-    }
+    if (!loading && !user) navigate("/login");
   }, [user, loading]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-xl animate-pulse">🤖</div>
-          <p className="text-gray-400 text-sm">Loading...</p>
-        </div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 text-slate-300 animate-spin" />
       </div>
     );
   }
-
   if (!user) return null;
   return <Component />;
 }
@@ -36,13 +32,10 @@ function AuthRoute({ component: Component }: { component: React.ComponentType })
   const [, navigate] = useLocation();
 
   useEffect(() => {
-    if (!loading && user) {
-      navigate("/");
-    }
+    if (!loading && user) navigate("/");
   }, [user, loading]);
 
-  if (loading) return null;
-  if (user) return null;
+  if (loading || user) return null;
   return <Component />;
 }
 
@@ -50,6 +43,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={() => <AuthRoute component={Login} />} />
+      <Route path="/analytics" component={() => <ProtectedRoute component={Analytics} />} />
       <Route path="/bots/:id" component={() => <ProtectedRoute component={BotEditor} />} />
       <Route path="/preview" component={Preview} />
       <Route component={() => <ProtectedRoute component={Dashboard} />} />
