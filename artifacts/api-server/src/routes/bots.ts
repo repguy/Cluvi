@@ -5,9 +5,7 @@ import { requireAuth } from "../middlewares/auth";
 
 const router = Router();
 
-router.use(requireAuth);
-
-router.get("/bots", async (req, res) => {
+router.get("/bots", requireAuth, async (req, res) => {
   try {
     const bots = await db
       .select()
@@ -20,7 +18,7 @@ router.get("/bots", async (req, res) => {
   }
 });
 
-router.post("/bots", async (req, res) => {
+router.post("/bots", requireAuth, async (req, res) => {
   try {
     const {
       name,
@@ -72,7 +70,7 @@ router.post("/bots", async (req, res) => {
   }
 });
 
-router.get("/bots/:id", async (req, res) => {
+router.get("/bots/:id", requireAuth, async (req, res) => {
   try {
     const [bot] = await db
       .select()
@@ -97,7 +95,7 @@ router.get("/bots/:id", async (req, res) => {
   }
 });
 
-router.put("/bots/:id", async (req, res) => {
+router.put("/bots/:id", requireAuth, async (req, res) => {
   try {
     const {
       name,
@@ -147,7 +145,9 @@ router.put("/bots/:id", async (req, res) => {
     if (model !== undefined) updates.model = model;
     if (apiKey !== undefined) updates.apiKey = apiKey;
     if (systemPrompt !== undefined) updates.systemPrompt = systemPrompt;
-    if (appearance !== undefined) updates.appearance = appearance as typeof botsTable.$inferInsert.appearance;
+    if (appearance !== undefined)
+      updates.appearance =
+        appearance as typeof botsTable.$inferInsert.appearance;
     if (isActive !== undefined) updates.isActive = isActive;
     if (leadWebhookUrl !== undefined) updates.leadWebhookUrl = leadWebhookUrl;
 
@@ -164,7 +164,7 @@ router.put("/bots/:id", async (req, res) => {
   }
 });
 
-router.delete("/bots/:id", async (req, res) => {
+router.delete("/bots/:id", requireAuth, async (req, res) => {
   try {
     const existing = await db
       .select()

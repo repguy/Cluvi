@@ -5,9 +5,7 @@ import { requireAuth } from "../middlewares/auth";
 
 const router = Router();
 
-router.use(requireAuth);
-
-router.get("/analytics", async (req, res) => {
+router.get("/analytics", requireAuth, async (req, res) => {
   try {
     const userId = req.session.userId!;
 
@@ -88,7 +86,7 @@ router.get("/analytics", async (req, res) => {
   }
 });
 
-router.get("/analytics/conversations", async (req, res) => {
+router.get("/analytics/conversations", requireAuth, async (req, res) => {
   try {
     const userId = req.session.userId!;
 
