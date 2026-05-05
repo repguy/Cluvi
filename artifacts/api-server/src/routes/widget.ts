@@ -177,9 +177,26 @@ router.post("/widget/:publicId/chat", async (req, res) => {
     res.json({ message: reply });
   } catch (err) {
     req.log.error({ err }, "widget chat error");
-    res.status(500).json({
-      message: "Sorry, I'm having trouble responding right now. Please try again.",
-    });
+
+    const raw = err instanceof Error ? err.message : "";
+    let userMessage = "Sorry, I'm having trouble responding right now. Please try again.";
+
+    if (raw.includes("429") || /rate.?limit/i.test(raw) || /rate-limited/i.test(raw)) {
+      userMessage = "This model is temporarily rate limited — please try again in a moment, or ask the site owner to switch to a different model.";
+    } else if (
+      raw.includes("404") ||
+      /no endpoints/i.test(raw) ||
+      /model not found/i.test(raw) ||
+      /not found/i.test(raw)
+    ) {
+      userMessage = "The configured AI model is unavailable. Please ask the site owner to update the model ID in their bot settings.";
+    } else if (raw.includes("401") || /invalid.{0,20}key/i.test(raw) || /auth/i.test(raw)) {
+      userMessage = "There's an issue with the API key. Please ask the site owner to check their bot settings.";
+    } else if (!bot.apiKey) {
+      userMessage = "This bot isn't fully set up yet — no API key has been configured.";
+    }
+
+    res.status(500).json({ message: userMessage });
   }
 });
 

@@ -33,11 +33,12 @@ const MODELS: Record<string, { value: string; label: string; note?: string }[]> 
     { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash", note: "Balanced" },
   ],
   openrouter: [
-    { value: "meta-llama/llama-3.1-8b-instruct:free", label: "Llama 3.1 8B", note: "Free" },
-    { value: "mistralai/mistral-7b-instruct:free", label: "Mistral 7B", note: "Free" },
-    { value: "google/gemma-2-9b-it:free", label: "Gemma 2 9B", note: "Free" },
+    { value: "meta-llama/llama-3.3-70b-instruct:free", label: "Llama 3.3 70B", note: "Free" },
+    { value: "meta-llama/llama-3.1-8b-instruct:free", label: "Llama 3.1 8B", note: "Free · Fast" },
     { value: "deepseek/deepseek-r1:free", label: "DeepSeek R1", note: "Free" },
+    { value: "google/gemma-3-27b-it:free", label: "Gemma 3 27B", note: "Free" },
     { value: "qwen/qwen-2.5-72b-instruct:free", label: "Qwen 2.5 72B", note: "Free" },
+    { value: "microsoft/phi-4:free", label: "Microsoft Phi-4", note: "Free" },
     { value: "_custom", label: "Custom model ID...", note: "" },
   ],
 };
@@ -379,11 +380,17 @@ export default function BotEditor() {
                       <div className="mt-2">
                         <Input
                           value={customModel}
-                          onChange={(e) => { setCustomModel(e.target.value); update("model", e.target.value); }}
+                          onChange={(e) => setCustomModel(e.target.value)}
                           placeholder="e.g. anthropic/claude-3-haiku"
                           className="mt-2"
+                          autoFocus
                         />
-                        <p className="text-xs text-slate-400 mt-1.5">Find model IDs at openrouter.ai/models</p>
+                        <p className="text-xs text-slate-400 mt-1.5">
+                          Browse model IDs at{" "}
+                          <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline">
+                            openrouter.ai/models
+                          </a>
+                        </p>
                       </div>
                     )}
                   </Field>
