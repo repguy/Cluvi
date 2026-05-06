@@ -463,7 +463,7 @@ router.get("/widget.js", async (req, res) => {
     if(role==='assistant'){inner+='<div class="_cb_mav" style="background:'+c+'">'+letter()+'</div>';}
     inner+='<div>';
     var bubbleContent=isHtml?text:renderMd(text);
-    inner+='<div class="_cb_bub '+(role==='user'?'_cb_user":"_cb_bot")
+    inner+='<div class="_cb_bub '+(role==='user'?'_cb_user':'_cb_bot')
       +'"'+(role==='user'?' style="background:'+c+'"':'')+'>'+bubbleContent+'</div>';
     inner+='<div class="_cb_ts">'+fmtTime()+'</div>';
     inner+='</div>';
@@ -480,7 +480,7 @@ router.get("/widget.js", async (req, res) => {
     var inner='';
     if(role==='assistant'){inner+='<div class="_cb_mav" style="background:'+c+'">'+letter()+'</div>';}
     inner+='<div>';
-    inner+='<div class="_cb_bub '+(role==='user'?'_cb_user":"_cb_bot")+'"'
+    inner+='<div class="_cb_bub '+(role==='user'?'_cb_user':'_cb_bot')+'"'
       +(role==='user'?' style="background:'+c+';padding:6px"':' style="padding:6px"')+'>'
       +'<img src="'+src+'" alt="'+(filename||'image')+'" style="max-width:180px;max-height:160px;border-radius:8px;display:block;cursor:pointer" onclick="window.open(this.src)">'
       +'<span style="display:block;font-size:10px;opacity:0.7;margin-top:4px;text-align:center">'+(filename||'image')+'</span>'
