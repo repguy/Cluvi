@@ -45,7 +45,8 @@ A single-owner AI chatbot studio where the owner creates AI bots and embeds them
 - **Conversations page**: Session list, click any row to view full transcript, CSV export
 - **Bookings page**: Table with status management, CSV export
 - **Templates**: 8 industry presets (Dental, Restaurant, Law, Real Estate, Salon, Medical, Gym, E-commerce)
-- **Widget**: Booking flow, typing delay, sound, retry logic, rate limiting, domain whitelist enforcement
+- **Widget**: Booking flow, typing delay, sound, retry logic, rate limiting, domain whitelist enforcement, showBranding toggle
+- **Appearance tab**: Toggle to show/hide "Powered by BotBuilder" branding in the widget footer (`showBranding` field in `BotAppearance`)
 
 ## User preferences
 - Sidebar: slate-950 bg, indigo-500 accent

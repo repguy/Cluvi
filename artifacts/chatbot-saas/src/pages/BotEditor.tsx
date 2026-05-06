@@ -72,6 +72,7 @@ const DEFAULT_APPEARANCE: BotAppearance = {
   officeHours: "",
   afterHoursMessage: "",
   soundEnabled: false,
+  showBranding: true,
 };
 
 const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
@@ -543,6 +544,13 @@ export default function BotEditor() {
                       ))}
                     </div>
                   </Field>
+                  <div className="flex items-center justify-between pt-1">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Show "Powered by BotBuilder"</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Display the branding footer inside the chat widget.</p>
+                    </div>
+                    <Toggle enabled={appearance.showBranding ?? true} onChange={(v) => updateAppearance("showBranding", v)} />
+                  </div>
                 </Section>
 
                 <Section title="Messages">

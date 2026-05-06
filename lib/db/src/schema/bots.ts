@@ -29,6 +29,7 @@ export interface BotAppearance {
   officeHours: string;
   afterHoursMessage: string;
   soundEnabled: boolean;
+  showBranding: boolean;
 }
 
 export interface NotificationsConfig {
