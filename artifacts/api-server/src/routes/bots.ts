@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, botsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, botsTable, conversationsTable, bookingsTable } from "@workspace/db";
+import { eq, and, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 
 const router = Router();
@@ -17,7 +17,7 @@ router.get("/bots", requireAuth, async (req, res) => {
 
 router.post("/bots", requireAuth, async (req, res) => {
   try {
-    const { name, description, provider, model, apiKey, systemPrompt, appearance, isActive, leadWebhookUrl, notificationsConfig } = req.body;
+    const { name, description, provider, model, apiKey, systemPrompt, appearance, isActive, leadWebhookUrl, notificationsConfig, allowedDomains } = req.body;
     if (!name?.trim()) { res.status(400).json({ message: "Bot name is required" }); return; }
     const [bot] = await db.insert(botsTable).values({
       userId: req.session.userId!,
@@ -29,6 +29,7 @@ router.post("/bots", requireAuth, async (req, res) => {
       systemPrompt: systemPrompt ?? "",
       appearance: appearance ?? undefined,
       notificationsConfig: notificationsConfig ?? undefined,
+      allowedDomains: allowedDomains ?? [],
       isActive: isActive ?? true,
       leadWebhookUrl: leadWebhookUrl ?? "",
     }).returning();
@@ -52,7 +53,7 @@ router.get("/bots/:id", requireAuth, async (req, res) => {
 
 router.put("/bots/:id", requireAuth, async (req, res) => {
   try {
-    const { name, description, provider, model, apiKey, systemPrompt, appearance, isActive, leadWebhookUrl, notificationsConfig } = req.body;
+    const { name, description, provider, model, apiKey, systemPrompt, appearance, isActive, leadWebhookUrl, notificationsConfig, allowedDomains } = req.body;
     const existing = await db.select().from(botsTable).where(and(eq(botsTable.id, req.params.id), eq(botsTable.userId, req.session.userId!))).limit(1);
     if (existing.length === 0) { res.status(404).json({ message: "Bot not found" }); return; }
     const updates: Partial<typeof botsTable.$inferInsert> = { updatedAt: new Date() };
@@ -66,6 +67,7 @@ router.put("/bots/:id", requireAuth, async (req, res) => {
     if (isActive !== undefined) updates.isActive = isActive;
     if (leadWebhookUrl !== undefined) updates.leadWebhookUrl = leadWebhookUrl;
     if (notificationsConfig !== undefined) updates.notificationsConfig = notificationsConfig;
+    if (allowedDomains !== undefined) updates.allowedDomains = allowedDomains;
     const [bot] = await db.update(botsTable).set(updates).where(eq(botsTable.id, req.params.id)).returning();
     res.json(bot);
   } catch (err) {
@@ -82,6 +84,83 @@ router.delete("/bots/:id", requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "delete bot error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.post("/bots/:id/duplicate", requireAuth, async (req, res) => {
+  try {
+    const [original] = await db.select().from(botsTable).where(and(eq(botsTable.id, req.params.id), eq(botsTable.userId, req.session.userId!))).limit(1);
+    if (!original) { res.status(404).json({ message: "Bot not found" }); return; }
+    const [duplicate] = await db.insert(botsTable).values({
+      userId: req.session.userId!,
+      name: `${original.name} (Copy)`,
+      description: original.description,
+      provider: original.provider,
+      model: original.model,
+      apiKey: original.apiKey,
+      systemPrompt: original.systemPrompt,
+      appearance: original.appearance,
+      notificationsConfig: original.notificationsConfig,
+      allowedDomains: original.allowedDomains,
+      isActive: false,
+      leadWebhookUrl: original.leadWebhookUrl,
+    }).returning();
+    res.status(201).json(duplicate);
+  } catch (err) {
+    req.log.error({ err }, "duplicate bot error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.get("/bots/:id/stats", requireAuth, async (req, res) => {
+  try {
+    const [bot] = await db.select({ id: botsTable.id }).from(botsTable).where(and(eq(botsTable.id, req.params.id), eq(botsTable.userId, req.session.userId!))).limit(1);
+    if (!bot) { res.status(404).json({ message: "Bot not found" }); return; }
+
+    const convStats = await db
+      .select({
+        totalConversations: sql<number>`count(*)::int`,
+        totalMessages: sql<number>`coalesce(sum(${conversationsTable.messageCount}), 0)::int`,
+      })
+      .from(conversationsTable)
+      .where(eq(conversationsTable.botId, bot.id));
+
+    const bookingStats = await db
+      .select({ totalBookings: sql<number>`count(*)::int` })
+      .from(bookingsTable)
+      .where(eq(bookingsTable.botId, bot.id));
+
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const daily = await db
+      .select({
+        date: sql<string>`DATE(${conversationsTable.createdAt})::text`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(conversationsTable)
+      .where(and(eq(conversationsTable.botId, bot.id), sql`${conversationsTable.createdAt} >= ${sevenDaysAgo}`))
+      .groupBy(sql`DATE(${conversationsTable.createdAt})`)
+      .orderBy(sql`DATE(${conversationsTable.createdAt})`);
+
+    const dateMap = new Map(daily.map((d) => [d.date, d.count]));
+    const dailyConversations = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const key = d.toISOString().split("T")[0];
+      dailyConversations.push({ date: key, count: dateMap.get(key) ?? 0 });
+    }
+
+    res.json({
+      totalConversations: convStats[0]?.totalConversations ?? 0,
+      totalMessages: convStats[0]?.totalMessages ?? 0,
+      totalBookings: bookingStats[0]?.totalBookings ?? 0,
+      dailyConversations,
+    });
+  } catch (err) {
+    req.log.error({ err }, "bot stats error");
     res.status(500).json({ message: "Internal server error" });
   }
 });

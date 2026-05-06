@@ -5,6 +5,51 @@ import { sql } from "drizzle-orm";
 
 const router = Router();
 
+// ── Simple in-memory rate limiter ──────────────────────────────────────────
+interface RateEntry { count: number; resetAt: number }
+const rateLimitStore = new Map<string, RateEntry>();
+
+function checkRateLimit(key: string, maxReqs: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitStore.get(key);
+  if (!entry || now > entry.resetAt) {
+    rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= maxReqs) return false;
+  entry.count++;
+  return true;
+}
+
+// Clean up old rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitStore.entries()) {
+    if (now > entry.resetAt) rateLimitStore.delete(key);
+  }
+}, 5 * 60 * 1000);
+
+// ── Domain whitelist helper ────────────────────────────────────────────────
+function extractDomain(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  } catch { return url.toLowerCase().replace(/^www\./, ""); }
+}
+
+function isDomainAllowed(allowedDomains: string[], req: import("express").Request): boolean {
+  if (!allowedDomains || allowedDomains.length === 0) return true;
+  const origin = req.headers["origin"] as string | undefined;
+  const referer = req.headers["referer"] as string | undefined;
+  const source = origin || referer;
+  if (!source) return true; // server-side or curl — allow
+  const requestDomain = extractDomain(source);
+  return allowedDomains.some((d) => {
+    const allowed = d.toLowerCase().replace(/^www\./, "").replace(/^https?:\/\//, "");
+    return requestDomain === allowed || requestDomain.endsWith(`.${allowed}`);
+  });
+}
+
+// ── AI provider call ───────────────────────────────────────────────────────
 async function callAI(
   provider: string,
   model: string,
@@ -75,6 +120,7 @@ async function callAI(
   throw new Error(`Unknown provider: ${provider}`);
 }
 
+// ── Widget config ──────────────────────────────────────────────────────────
 router.get("/widget/:publicId/config", async (req, res) => {
   try {
     const [bot] = await db
@@ -85,6 +131,11 @@ router.get("/widget/:publicId/config", async (req, res) => {
 
     if (!bot || !bot.isActive) {
       res.status(404).json({ message: "Bot not found" });
+      return;
+    }
+
+    if (!isDomainAllowed(bot.allowedDomains, req)) {
+      res.status(403).json({ message: "Domain not allowed" });
       return;
     }
 
@@ -106,7 +157,15 @@ router.get("/widget/:publicId/config", async (req, res) => {
   }
 });
 
+// ── Widget chat ────────────────────────────────────────────────────────────
 router.post("/widget/:publicId/chat", async (req, res) => {
+  // Rate limit: 30 requests per minute per IP
+  const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+  if (!checkRateLimit(`chat:${ip}`, 30, 60_000)) {
+    res.status(429).json({ message: "Too many requests. Please slow down." });
+    return;
+  }
+
   try {
     const [bot] = await db
       .select()
@@ -122,6 +181,10 @@ router.post("/widget/:publicId/chat", async (req, res) => {
       res.status(400).json({ message: "Bot not configured" });
       return;
     }
+    if (!isDomainAllowed(bot.allowedDomains, req)) {
+      res.status(403).json({ message: "Domain not allowed" });
+      return;
+    }
 
     const { messages, sessionId } = req.body as {
       messages: { role: string; content: string }[];
@@ -133,7 +196,11 @@ router.post("/widget/:publicId/chat", async (req, res) => {
       return;
     }
 
+    const reply = await callAI(bot.provider, bot.model, bot.apiKey, bot.systemPrompt, messages);
+
+    // Store conversation + messages asynchronously
     if (sessionId) {
+      const fullMessages = [...messages, { role: "assistant", content: reply }];
       (async () => {
         try {
           const existing = await db
@@ -149,16 +216,24 @@ router.post("/widget/:publicId/chat", async (req, res) => {
           if (existing.length > 0) {
             await db
               .update(conversationsTable)
-              .set({ messageCount: sql`${conversationsTable.messageCount} + 1`, updatedAt: new Date() })
+              .set({
+                messageCount: sql`${conversationsTable.messageCount} + 1`,
+                messages: sql`${JSON.stringify(fullMessages)}::jsonb`,
+                updatedAt: new Date(),
+              })
               .where(eq(conversationsTable.id, existing[0].id));
           } else {
-            await db.insert(conversationsTable).values({ botId: bot.id, sessionId, messageCount: 1 });
+            await db.insert(conversationsTable).values({
+              botId: bot.id,
+              sessionId,
+              messageCount: 1,
+              messages: fullMessages as { role: "user" | "assistant"; content: string }[],
+            });
           }
         } catch { /* silently fail */ }
       })();
     }
 
-    const reply = await callAI(bot.provider, bot.model, bot.apiKey, bot.systemPrompt, messages);
     res.json({ message: reply });
   } catch (err) {
     req.log.error({ err }, "widget chat error");
@@ -175,7 +250,15 @@ router.post("/widget/:publicId/chat", async (req, res) => {
   }
 });
 
+// ── Widget booking ─────────────────────────────────────────────────────────
 router.post("/widget/:publicId/booking", async (req, res) => {
+  // Rate limit: 10 bookings per minute per IP
+  const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+  if (!checkRateLimit(`booking:${ip}`, 10, 60_000)) {
+    res.status(429).json({ message: "Too many requests. Please slow down." });
+    return;
+  }
+
   try {
     const [bot] = await db
       .select()
@@ -185,6 +268,10 @@ router.post("/widget/:publicId/booking", async (req, res) => {
 
     if (!bot || !bot.isActive) {
       res.status(404).json({ message: "Bot not found" });
+      return;
+    }
+    if (!isDomainAllowed(bot.allowedDomains, req)) {
+      res.status(403).json({ message: "Domain not allowed" });
       return;
     }
 
@@ -208,7 +295,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
 
     // Send notifications in background
     (async () => {
-      // METHOD A: Resend email
+      // Resend email
       if (nc?.resendEnabled && nc.resendApiKey && ownerEmail) {
         try {
           await fetch("https://api.resend.com/emails", {
@@ -229,7 +316,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
         } catch (e) { req.log.warn({ e }, "resend failed"); }
       }
 
-      // METHOD B: Twilio SMS
+      // Twilio SMS
       if (nc?.twilioEnabled && nc.twilioAccountSid && nc.twilioAuthToken && nc.twilioOwnerPhone) {
         try {
           const creds = Buffer.from(`${nc.twilioAccountSid}:${nc.twilioAuthToken}`).toString("base64");
@@ -249,7 +336,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
         } catch (e) { req.log.warn({ e }, "twilio failed"); }
       }
 
-      // METHOD C: Zapier webhook
+      // Zapier webhook
       if (bot.leadWebhookUrl && (!nc || nc.zapierEnabled !== false)) {
         try {
           await fetch(bot.leadWebhookUrl, {
@@ -268,6 +355,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
   }
 });
 
+// ── Widget script ──────────────────────────────────────────────────────────
 router.get("/widget.js", async (req, res) => {
   const botId = req.query.botId as string;
   if (!botId) { res.status(400).send("// Missing botId"); return; }
@@ -276,7 +364,7 @@ router.get("/widget.js", async (req, res) => {
   const host = req.headers["x-forwarded-host"] || req.headers.host || "";
   const apiBase = `${proto}://${host}`;
 
-  const css = '#_cb_w *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:0}#_cb_w{position:fixed;bottom:20px;right:20px;z-index:999999}#_cb_btn{width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,0.2);transition:transform 0.2s;position:relative}#_cb_btn:hover{transform:scale(1.08)}#_cb_bdg{position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid white}#_cb_win{position:absolute;bottom:70px;right:0;width:340px;background:#fff;border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,0.16);display:none;flex-direction:column;overflow:hidden;max-height:540px;border:1px solid rgba(0,0,0,0.07)}#_cb_win._open{display:flex}#_cb_head{padding:12px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0}#_cb_msgs{flex:1;overflow-y:auto;padding:12px;background:#f8fafc;display:flex;flex-direction:column;gap:8px;min-height:200px;position:relative}#_cb_ph{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#94a3b8;font-size:13px;text-align:center;pointer-events:none}#_cb_qa{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px 0}#_cb_foot{background:#fff;border-top:1px solid #f1f5f9;flex-shrink:0}#_cb_form{display:flex;align-items:center;gap:8px;padding:10px 12px}#_cb_inp{flex:1;border:1px solid #e2e8f0;border-radius:10px;padding:9px 13px;font-size:13px;color:#1e293b;outline:none;transition:border 0.15s}#_cb_inp:focus{border-color:#6366f1}#_cb_snd{width:34px;height:34px;border-radius:10px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity 0.15s;padding:0}#_cb_snd:hover{opacity:0.85}#_cb_snd svg{width:16px;height:16px;display:block}#_cb_pw{text-align:center;padding:4px 0 8px;font-size:10px}#_cb_pw a{color:#94a3b8;text-decoration:none}#_cb_pw a:hover{color:#6366f1}._cb_hname{color:#fff;font-size:13px;font-weight:600;line-height:1.2}._cb_hstatus{color:rgba(255,255,255,0.75);font-size:11px;display:flex;align-items:center;gap:4px;margin-top:2px}._cb_dot{width:6px;height:6px;background:#4ade80;border-radius:50%;display:inline-block}#_cb_x{margin-left:auto;background:none;border:none;color:rgba(255,255,255,0.65);cursor:pointer;font-size:18px;line-height:1;padding:4px;display:flex;align-items:center;justify-content:center}#_cb_x:hover{color:#fff}._cb_msg{display:flex;align-items:flex-end;gap:6px}._cb_msg._u{flex-direction:row-reverse}._cb_mav{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}._cb_bub{max-width:78%;padding:9px 12px;font-size:13px;line-height:1.5;word-wrap:break-word;white-space:pre-wrap}._cb_bot{background:#fff;color:#1e293b;border:1px solid #e2e8f0;border-radius:14px 14px 14px 2px}._cb_user{color:#fff;border-radius:14px 14px 2px 14px}._cb_dots{display:flex;gap:4px;padding:10px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:14px 14px 14px 2px;align-items:center}._cb_dots span{width:6px;height:6px;border-radius:50%;background:#94a3b8;display:inline-block;animation:_cb_bounce 1.2s infinite}._cb_dots span:nth-child(2){animation-delay:0.2s}._cb_dots span:nth-child(3){animation-delay:0.4s}._cb_qbtn{border:none;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;transition:opacity 0.15s;margin:2px;white-space:nowrap}._cb_qbtn:hover{opacity:0.75}._cb_wr{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0}@keyframes _cb_bounce{0%,80%,100%{transform:scale(0.8)}40%{transform:scale(1.2)}}@keyframes _cb_pulse{0%,100%{box-shadow:0 4px 20px rgba(0,0,0,0.18)}50%{box-shadow:0 4px 28px rgba(99,102,241,0.45)}}@media(max-width:480px){#_cb_w{bottom:0!important;right:0!important;left:0}#_cb_btn{position:fixed;bottom:16px;right:16px}#_cb_win{position:fixed;bottom:0;left:0;right:0;width:100%;max-width:100%;border-radius:16px 16px 0 0;max-height:85vh}}';
+  const css = '#_cb_w *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:0}#_cb_w{position:fixed;bottom:20px;right:20px;z-index:999999}#_cb_btn{width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,0.2);transition:transform 0.2s;position:relative}#_cb_btn:hover{transform:scale(1.08)}#_cb_bdg{position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid white}#_cb_win{position:absolute;bottom:70px;right:0;width:340px;background:#fff;border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,0.16);display:none;flex-direction:column;overflow:hidden;max-height:540px;border:1px solid rgba(0,0,0,0.07)}#_cb_win._open{display:flex}#_cb_head{padding:12px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0}#_cb_msgs{flex:1;overflow-y:auto;padding:12px;background:#f8fafc;display:flex;flex-direction:column;gap:8px;min-height:200px;position:relative}#_cb_ph{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#94a3b8;font-size:13px;text-align:center;pointer-events:none}#_cb_qa{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px 0}#_cb_foot{background:#fff;border-top:1px solid #f1f5f9;flex-shrink:0}#_cb_form{display:flex;align-items:center;gap:8px;padding:10px 12px}#_cb_inp{flex:1;border:1px solid #e2e8f0;border-radius:10px;padding:9px 13px;font-size:13px;color:#1e293b;outline:none;transition:border 0.15s}#_cb_inp:focus{border-color:#6366f1}#_cb_snd{width:34px;height:34px;border-radius:10px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity 0.15s;padding:0}#_cb_snd:hover{opacity:0.85}#_cb_snd svg{width:16px;height:16px;display:block}#_cb_pw{text-align:center;padding:4px 0 8px;font-size:10px;color:#94a3b8}._cb_msg{display:flex;align-items:flex-end;gap:8px}._cb_msg._u{flex-direction:row-reverse}._cb_mav{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex-shrink:0}._cb_bub{max-width:220px;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;word-break:break-word;white-space:pre-wrap}._cb_bot{background:#fff;color:#1e293b;border:1px solid #e2e8f0;border-bottom-left-radius:4px}._cb_user{color:#fff;border-bottom-right-radius:4px}._cb_dots{display:flex;gap:4px;padding:10px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;border-bottom-left-radius:4px}._cb_dots span{width:6px;height:6px;background:#94a3b8;border-radius:50%;animation:_cb_blink 1.2s infinite}._cb_dots span:nth-child(2){animation-delay:0.2s}._cb_dots span:nth-child(3){animation-delay:0.4s}@keyframes _cb_blink{0%,80%,100%{opacity:0.25}40%{opacity:1}}._cb_qbtn{padding:7px 14px;border-radius:20px;border:none;cursor:pointer;font-size:12px;font-weight:500;transition:opacity 0.15s}._cb_qbtn:hover{opacity:0.8}._cb_wr{display:flex;flex-wrap:wrap;gap:6px;padding:6px 12px}._cb_hname{font-weight:600;font-size:13px;color:#fff}._cb_hstatus{font-size:11px;color:rgba(255,255,255,0.75);display:flex;align-items:center;gap:4px}._cb_dot{width:6px;height:6px;background:#4ade80;border-radius:50%;display:inline-block}#_cb_x{margin-left:auto;background:rgba(255,255,255,0.15);border:none;color:#fff;width:24px;height:24px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:background 0.15s}#_cb_x:hover{background:rgba(255,255,255,0.25)}';
 
   const js = `
 (function() {
@@ -317,16 +405,16 @@ router.get("/widget.js", async (req, res) => {
 
   var wrap=document.createElement('div');
   wrap.id='_cb_w';
-  wrap.innerHTML='<button id="_cb_btn" aria-label="Open chat"><span id="_cb_bdg">1</span><span style="font-size:22px">\\u{1F4AC}</span></button><div id="_cb_win" role="dialog"><div id="_cb_head"></div><div id="_cb_msgs" aria-live="polite"><div id="_cb_ph">\\u{1F4AC} Ask me anything</div></div><div id="_cb_qa"></div><div id="_cb_foot"><div id="_cb_form"><input id="_cb_inp" type="text" placeholder="Type a message\\u2026" aria-label="Message"/><button id="_cb_snd" aria-label="Send"><svg fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg></button></div><div id="_cb_pw">Powered by <a href="https://botbuilder.app" target="_blank">BotBuilder</a></div></div></div>';
+  wrap.innerHTML='<button id="_cb_btn" aria-label="Open chat"><span id="_cb_bdg">1</span><span style="font-size:22px">\\u{1F4AC}</span></button><div id="_cb_win" role="dialog"><div id="_cb_head"></div><div id="_cb_msgs" aria-live="polite"><div id="_cb_ph">\\u{1F4AC} Ask me anything</div></div><div id="_cb_qa"></div><div id="_cb_foot"><div id="_cb_form"><input id="_cb_inp" type="text" placeholder="Type a message\\u2026" aria-label="Message"/><button id="_cb_snd" aria-label="Send"><svg fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg></button></div><div id="_cb_pw">Powered by <a href="https://botbuilder.app" target="_blank" style="color:#6366f1;text-decoration:none">BotBuilder</a></div></div></div>';
   document.body.appendChild(wrap);
 
   var btn=document.getElementById('_cb_btn'),bdg=document.getElementById('_cb_bdg'),win=document.getElementById('_cb_win'),msgs_el=document.getElementById('_cb_msgs'),qa_el=document.getElementById('_cb_qa'),inp=document.getElementById('_cb_inp'),snd=document.getElementById('_cb_snd'),head=document.getElementById('_cb_head');
 
   function initConfig() {
     apiFetch('/api/widget/'+BOT_ID+'/config').then(function(c){
+      if(c.message){return;}
       cfg=c;
       var col=cfg.primaryColor||'#6366f1';
-      var rgb=hexToRgb(col);
       btn.style.backgroundColor=col;
       snd.style.backgroundColor=col;
       head.style.background='linear-gradient(135deg,'+col+','+col+'cc)';
@@ -487,59 +575,33 @@ router.get("/widget.js", async (req, res) => {
     cfm.onclick=function(){c.remove();addMsg('user','Confirm');confirmBooking();};
     var can=document.createElement('button'); can.className='_cb_qbtn'; can.textContent='\\u2717 Cancel';
     can.style.backgroundColor='rgba(239,68,68,0.1)'; can.style.color='#ef4444';
-    can.onclick=function(){c.remove();booking=null;addMsg('user','Cancel');setTimeout(function(){addMsg('assistant','No problem! Is there anything else I can help with?');},400);};
+    can.onclick=function(){c.remove();booking=null;addMsg('assistant','No problem! Is there anything else I can help you with?');};
     c.appendChild(cfm); c.appendChild(can); msgs_el.appendChild(c); msgs_el.scrollTop=msgs_el.scrollHeight;
   }
 
   function confirmBooking(){
-    var snap={name:booking.name,phone:booking.phone,service:booking.service,date:booking.date,time:booking.time};
-    loading=true; showTyping();
-    apiFetch('/api/widget/'+BOT_ID+'/booking',{method:'POST',body:JSON.stringify({sessionId:SESSION_ID,name:snap.name,phone:snap.phone,service:snap.service,date:snap.date,timePreference:snap.time})})
+    apiFetch('/api/widget/'+BOT_ID+'/booking',{method:'POST',body:JSON.stringify({sessionId:SESSION_ID,name:booking.name,phone:booking.phone,service:booking.service,date:booking.date,timePreference:booking.time})})
     .then(function(){
-      hideTyping();
-      var msg=(cfg&&cfg.bookingConfirmationMessage)||'Your appointment has been booked! We\\'ll be in touch to confirm. \\uD83C\\uDF89';
-      addMsg('assistant',msg); playSound(); showCalLink(snap); booking=null; loading=false;
-    }).catch(function(){
-      hideTyping(); addMsg('assistant','Sorry, there was an issue submitting your booking. Please call us directly.'); booking=null; loading=false;
-    });
+      var msg=(cfg&&cfg.bookingConfirmationMessage)||'Your appointment has been booked! We\\'ll be in touch shortly. \\uD83C\\uDF89';
+      addMsg('assistant',msg); booking=null; playSound();
+    }).catch(function(){addMsg('assistant','Sorry, there was an issue confirming your booking. Please call us directly.');booking=null;});
   }
 
-  function showCalLink(b){
-    var col=(cfg&&cfg.primaryColor)||'#6366f1';
-    var ds=b.date.replace(/-/g,'');
-    var title=encodeURIComponent('Appointment at '+((cfg&&cfg.name)||'Business'));
-    var det=encodeURIComponent('Service: '+b.service+', Phone: '+b.phone);
-    var url='https://calendar.google.com/calendar/render?action=TEMPLATE&text='+title+'&details='+det+'&dates='+ds+'/'+ds;
-    var lk=document.createElement('div'); lk.className='_cb_wr';
-    lk.innerHTML='<a href="'+url+'" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:rgba(99,102,241,0.1);color:'+col+';border-radius:999px;padding:6px 14px;font-size:12px;font-weight:500;text-decoration:none">\\uD83D\\uDCC5 Add to Google Calendar</a>';
-    msgs_el.appendChild(lk); msgs_el.scrollTop=msgs_el.scrollHeight;
-  }
-
-  window._cbToggle=function(){
+  window._cbToggle = function() {
     isOpen=!isOpen;
-    if(isOpen){
-      win.classList.add('_open');
-      btn.innerHTML='<svg width="20" height="20" fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>';
-      bdg.style.display='none';
-      if(!initialized){initialized=true;initConfig();}
-      setTimeout(function(){inp.focus();},200);
-    } else {
-      win.classList.remove('_open');
-      btn.innerHTML='<span id="_cb_bdg" style="display:none"></span><span style="font-size:22px">\\u{1F4AC}</span>';
-    }
+    if(isOpen){win.classList.add('_open');bdg.style.display='none';inp.focus();if(!initialized){initialized=true;initConfig();}}
+    else{win.classList.remove('_open');}
   };
 
-  btn.onclick=function(){window._cbToggle();};
-  inp.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send(inp.value);}});
+  btn.onclick=window._cbToggle;
   snd.onclick=function(){send(inp.value);};
-  var c0='#6366f1'; btn.style.backgroundColor=c0; snd.style.backgroundColor=c0; head.style.background=c0;
-  btn.style.animation='_cb_pulse 2s ease-in-out infinite';
-})();`;
+  inp.onkeydown=function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send(inp.value);}};
+})();
+`;
 
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=60");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.send(js);
+  res.send(`var _cbCSS=${JSON.stringify(css)};${js}`);
 });
 
 export default router;

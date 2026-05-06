@@ -5,6 +5,7 @@ import botsRouter from "./bots";
 import widgetRouter from "./widget";
 import analyticsRouter from "./analytics";
 import bookingsRouter from "./bookings";
+import conversationsRouter from "./conversations";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(botsRouter);
 router.use(widgetRouter);
 router.use(analyticsRouter);
 router.use(bookingsRouter);
+router.use(conversationsRouter);
 
 export default router;

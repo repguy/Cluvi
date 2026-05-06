@@ -3,9 +3,12 @@ import { useLocation, useParams, useSearch } from "wouter";
 import {
   Settings, Bot, Palette, FileText, Code2, ChevronLeft,
   Save, Check, Eye, EyeOff, Copy, ExternalLink, Plus, X,
-  Loader2, CalendarCheck, Bell, Volume2, VolumeX,
+  Loader2, CalendarCheck, Volume2, VolumeX, Shield, BarChart2, Globe,
 } from "lucide-react";
-import { api, Bot as BotType, BotAppearance, NotificationsConfig } from "../lib/api";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
+import { api, Bot as BotType, BotAppearance, NotificationsConfig, BotStats } from "../lib/api";
 import Layout from "../components/Layout";
 
 const PROVIDERS = [
@@ -83,14 +86,16 @@ const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
   zapierEnabled: true,
 };
 
-type TabId = "general" | "ai" | "appearance" | "prompt" | "booking" | "integration";
+type TabId = "general" | "ai" | "appearance" | "prompt" | "booking" | "security" | "stats" | "integration";
 
-const TABS: { id: TabId; icon: React.ComponentType<{ className?: string }>; label: string }[] = [
+const BASE_TABS: { id: TabId; icon: React.ComponentType<{ className?: string }>; label: string }[] = [
   { id: "general", icon: Settings, label: "General" },
   { id: "ai", icon: Bot, label: "AI Provider" },
   { id: "appearance", icon: Palette, label: "Appearance" },
   { id: "prompt", icon: FileText, label: "System Prompt" },
   { id: "booking", icon: CalendarCheck, label: "Booking" },
+  { id: "security", icon: Shield, label: "Security" },
+  { id: "stats", icon: BarChart2, label: "Stats" },
   { id: "integration", icon: Code2, label: "Integration" },
 ];
 
@@ -149,6 +154,11 @@ function Section({ title, helper, children }: { title: string; helper?: string; 
   );
 }
 
+function formatDate(dateStr: string) {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export default function BotEditor() {
   const params = useParams<{ id: string }>();
   const search = useSearch();
@@ -168,6 +178,9 @@ export default function BotEditor() {
   const [customModel, setCustomModel] = useState("");
   const [qaInput, setQaInput] = useState("");
   const [serviceInput, setServiceInput] = useState("");
+  const [domainInput, setDomainInput] = useState("");
+  const [stats, setStats] = useState<BotStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
   const [bot, setBot] = useState<Partial<BotType>>({
     name: "",
@@ -178,16 +191,42 @@ export default function BotEditor() {
     systemPrompt: "",
     appearance: { ...DEFAULT_APPEARANCE },
     notificationsConfig: { ...DEFAULT_NOTIFICATIONS },
+    allowedDomains: [],
     isActive: true,
     leadWebhookUrl: "",
   });
 
   useEffect(() => {
-    if (!isNew) {
+    if (isNew) {
+      // Check for a pending template from the Dashboard
+      const raw = localStorage.getItem("botTemplate");
+      if (raw) {
+        localStorage.removeItem("botTemplate");
+        try {
+          const tpl = JSON.parse(raw);
+          setBot((prev) => ({
+            ...prev,
+            name: tpl.name ? `${tpl.name} Bot` : "",
+            description: tpl.description ?? "",
+            provider: tpl.provider ?? "openrouter",
+            model: tpl.model ?? "meta-llama/llama-3.3-70b-instruct:free",
+            systemPrompt: tpl.systemPrompt ?? "",
+            appearance: {
+              ...DEFAULT_APPEARANCE,
+              botName: tpl.name ?? "",
+              businessType: tpl.businessType ?? "",
+              welcomeMessage: tpl.welcomeMessage ?? DEFAULT_APPEARANCE.welcomeMessage,
+              quickActions: tpl.quickActions ?? [],
+              services: tpl.services ?? [],
+            },
+          }));
+        } catch { /* ignore */ }
+      }
+    } else {
       api.bots.get(params.id)
         .then((data) => {
           if (!data) { navigate("/"); return; }
-          setBot(data);
+          setBot({ ...data, allowedDomains: data.allowedDomains ?? [] });
           const models = MODELS[data.provider] ?? [];
           if (data.model && !models.find((m) => m.value === data.model)) {
             setCustomModel(data.model);
@@ -196,6 +235,16 @@ export default function BotEditor() {
         .finally(() => setLoading(false));
     }
   }, [params.id]);
+
+  // Load stats when stats tab is activated
+  useEffect(() => {
+    if (activeTab === "stats" && !isNew && params.id) {
+      setStatsLoading(true);
+      api.bots.getStats(params.id)
+        .then((data) => { if (data) setStats(data); })
+        .finally(() => setStatsLoading(false));
+    }
+  }, [activeTab, params.id, isNew]);
 
   const update = useCallback((key: keyof BotType, value: unknown) => {
     setBot((prev) => ({ ...prev, [key]: value }));
@@ -229,7 +278,7 @@ export default function BotEditor() {
         navigate(`/bots/${created!.id}`);
       } else {
         const updated = await api.bots.update(params.id, payload);
-        if (updated) setBot(updated);
+        if (updated) setBot({ ...updated, allowedDomains: updated.allowedDomains ?? [] });
         setSaved(true);
         setTimeout(() => setSaved(false), 2500);
       }
@@ -248,6 +297,19 @@ export default function BotEditor() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  function addDomain() {
+    const d = domainInput.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+    if (!d) return;
+    const current = bot.allowedDomains ?? [];
+    if (current.includes(d)) return;
+    update("allowedDomains", [...current, d]);
+    setDomainInput("");
+  }
+
+  function removeDomain(domain: string) {
+    update("allowedDomains", (bot.allowedDomains ?? []).filter((d) => d !== domain));
+  }
+
   const appearance = bot.appearance ?? DEFAULT_APPEARANCE;
   const notifications = bot.notificationsConfig ?? DEFAULT_NOTIFICATIONS;
   const models = MODELS[bot.provider ?? "anthropic"] ?? [];
@@ -255,6 +317,8 @@ export default function BotEditor() {
   const embedCode = bot.publicId
     ? `<script src="${window.location.origin}/api/widget.js?botId=${bot.publicId}"></script>`
     : null;
+
+  const TABS = isNew ? BASE_TABS.filter((t) => t.id !== "stats") : BASE_TABS;
 
   function addQA() {
     if (!qaInput.trim()) return;
@@ -660,67 +724,194 @@ export default function BotEditor() {
                             </button>
                           </div>
                         </Field>
-                        <Field label="Twilio From Number" helper="Your Twilio phone number.">
-                          <Input value={notifications.twilioFromPhone ?? ""} onChange={(e) => updateNotifications("twilioFromPhone", e.target.value)} placeholder="+15551234567" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <Field label="Owner Phone (To)">
+                          <Input value={notifications.twilioOwnerPhone} onChange={(e) => updateNotifications("twilioOwnerPhone", e.target.value)} placeholder="+15550001234" />
                         </Field>
-                        <Field label="Owner's Phone (To)" helper="Number to send SMS to.">
-                          <Input value={notifications.twilioOwnerPhone} onChange={(e) => updateNotifications("twilioOwnerPhone", e.target.value)} placeholder="+15559876543" />
+                        <Field label="Twilio Phone (From)">
+                          <Input value={notifications.twilioFromPhone} onChange={(e) => updateNotifications("twilioFromPhone", e.target.value)} placeholder="+15559876543" />
                         </Field>
                       </div>
-                      <a href="https://console.twilio.com" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:underline">Open Twilio console <ExternalLink className="w-3 h-3" /></a>
                     </>
                   )}
                 </Section>
 
-                <Section title="Zapier Webhook" helper="POST booking data to any Zapier zap or custom endpoint.">
+                <Section title="Zapier / Webhook" helper="POST booking data to any URL (Zapier, Make, n8n, etc.)">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <p className="text-sm font-medium text-slate-700">Enable Zapier webhook</p>
+                      <p className="text-sm font-medium text-slate-700">Enable webhook</p>
+                      <p className="text-xs text-slate-400">Send booking data to a webhook URL</p>
                     </div>
-                    <Toggle enabled={notifications.zapierEnabled} onChange={(v) => updateNotifications("zapierEnabled", v)} />
+                    <Toggle enabled={notifications.zapierEnabled !== false} onChange={(v) => updateNotifications("zapierEnabled", v)} />
                   </div>
-                  {notifications.zapierEnabled && (
+                  {notifications.zapierEnabled !== false && (
                     <Field label="Webhook URL">
-                      <Input value={bot.leadWebhookUrl ?? ""} onChange={(e) => update("leadWebhookUrl", e.target.value)} placeholder="https://hooks.zapier.com/..." type="url" />
+                      <Input value={bot.leadWebhookUrl ?? ""} onChange={(e) => update("leadWebhookUrl", e.target.value)} placeholder="https://hooks.zapier.com/..." />
                     </Field>
                   )}
                 </Section>
               </>
             )}
 
+            {/* ── SECURITY ── */}
+            {activeTab === "security" && (
+              <>
+                <div className="flex items-start gap-3 bg-amber-50 border border-amber-100 rounded-xl p-4 text-sm text-amber-800">
+                  <Shield className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-500" />
+                  <div>
+                    <strong>Domain Whitelist</strong> — if set, the widget will only respond on the listed domains. Leave empty to allow all domains.
+                  </div>
+                </div>
+
+                <Section title="Allowed Domains" helper="Only these domains can load and use this bot's widget. Add without 'https://' or 'www.'">
+                  <div className="space-y-2 min-h-[32px]">
+                    {(bot.allowedDomains ?? []).length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">No restrictions — widget works on all domains</p>
+                    ) : (
+                      (bot.allowedDomains ?? []).map((d, i) => (
+                        <div key={i} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Globe className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                            <span className="text-sm font-mono text-slate-700">{d}</span>
+                          </div>
+                          <button onClick={() => removeDomain(d)} className="text-slate-400 hover:text-red-500 transition-colors ml-2">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Input
+                      value={domainInput}
+                      onChange={(e) => setDomainInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDomain())}
+                      placeholder="example.com"
+                    />
+                    <button onClick={addDomain} className="flex items-center gap-1 px-3 py-2.5 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700 transition-colors flex-shrink-0">
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400">Enter domains like <code className="bg-slate-100 px-1 rounded">example.com</code> — subdomains are included automatically.</p>
+                </Section>
+
+                <Section title="Rate Limiting" helper="Built-in protection against abuse — no configuration needed.">
+                  <div className="space-y-3">
+                    {[
+                      { label: "Chat endpoint", limit: "30 requests / minute per IP" },
+                      { label: "Booking endpoint", limit: "10 requests / minute per IP" },
+                    ].map(({ label, limit }) => (
+                      <div key={label} className="flex items-center justify-between">
+                        <p className="text-sm text-slate-700">{label}</p>
+                        <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-1 rounded-full font-medium">{limit}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              </>
+            )}
+
+            {/* ── STATS ── */}
+            {activeTab === "stats" && !isNew && (
+              <>
+                {statsLoading ? (
+                  <div className="flex items-center justify-center py-24">
+                    <Loader2 className="w-6 h-6 text-slate-300 animate-spin" />
+                  </div>
+                ) : stats ? (
+                  <>
+                    <div className="grid grid-cols-3 gap-4">
+                      {[
+                        { label: "Conversations", value: stats.totalConversations },
+                        { label: "Messages", value: stats.totalMessages },
+                        { label: "Bookings", value: stats.totalBookings },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm text-center">
+                          <p className="text-2xl font-bold text-slate-900 tabular-nums">{value}</p>
+                          <p className="text-xs text-slate-400 mt-1">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <Section title="Daily Conversations (Last 7 Days)">
+                      <div className="h-40">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={stats.dailyConversations} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="botGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                            <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} allowDecimals={false} />
+                            <Tooltip
+                              contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12 }}
+                              labelFormatter={formatDate}
+                            />
+                            <Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={2} fill="url(#botGrad)" name="Conversations" />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </Section>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-24 text-center">
+                    <BarChart2 className="w-10 h-10 text-slate-200 mb-3" />
+                    <p className="text-slate-400">No stats available yet.</p>
+                    <p className="text-slate-300 text-sm mt-1">Stats appear once the widget receives its first chat.</p>
+                  </div>
+                )}
+              </>
+            )}
+
             {/* ── INTEGRATION ── */}
             {activeTab === "integration" && (
               <>
-                {isNew ? (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-sm text-amber-800">
-                    Save the bot first to generate your embed code.
+                {!bot.publicId ? (
+                  <div className="flex items-start gap-3 bg-amber-50 border border-amber-100 rounded-xl p-4 text-sm text-amber-800">
+                    <Code2 className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-500" />
+                    <div>Save the bot first to generate the embed code.</div>
                   </div>
                 ) : (
                   <>
-                    <Section title="Embed Code" helper="Paste this before the closing </body> tag of any website.">
-                      <div className="bg-slate-950 rounded-xl overflow-hidden">
-                        <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
-                          <span className="text-xs text-slate-500">HTML</span>
-                          <button onClick={copyEmbed} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors">
-                            {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                            {copied ? "Copied!" : "Copy"}
-                          </button>
-                        </div>
-                        <p className="px-4 py-3.5 font-mono text-xs text-emerald-400 break-all leading-relaxed select-all">{embedCode}</p>
+                    <Section title="Embed Code" helper="Paste this just before the closing </body> tag on your client's website.">
+                      <div className="relative">
+                        <pre className="bg-slate-900 text-emerald-400 rounded-xl p-4 text-xs overflow-x-auto font-mono leading-relaxed whitespace-pre-wrap break-all">
+                          {embedCode}
+                        </pre>
+                        <button
+                          onClick={copyEmbed}
+                          className="absolute top-3 right-3 flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white text-xs px-2.5 py-1.5 rounded-lg transition-colors"
+                        >
+                          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copied ? "Copied!" : "Copy"}
+                        </button>
                       </div>
-                      <p className="text-xs text-slate-400">
-                        Public ID:{" "}
-                        <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-mono">{bot.publicId}</code>
-                      </p>
                     </Section>
 
-                    <Section title="Live Preview">
-                      <p className="text-sm text-slate-500 mb-3">Open a test page to see exactly how your bot looks on a client's website.</p>
+                    <Section title="Bot ID (Public)" helper="Share this with developers who need to reference the bot directly.">
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono text-slate-600 truncate">
+                          {bot.publicId}
+                        </code>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(bot.publicId!); }}
+                          className="flex items-center gap-1.5 px-3 py-2.5 border border-slate-200 rounded-lg text-xs text-slate-500 hover:bg-slate-50 transition-colors"
+                        >
+                          <Copy className="w-3.5 h-3.5" /> Copy
+                        </button>
+                      </div>
+                    </Section>
+
+                    <Section title="Preview" helper="Test the widget in a sandbox before embedding on a real site.">
                       <a
                         href={`/preview?botId=${bot.publicId}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+                        className="inline-flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         Open Preview
@@ -730,7 +921,6 @@ export default function BotEditor() {
                 )}
               </>
             )}
-
           </div>
         </main>
       </div>

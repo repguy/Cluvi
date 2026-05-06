@@ -91,6 +91,10 @@ export const botsTable = pgTable("bots", {
       twilioEnabled: false,
       zapierEnabled: false,
     })),
+  allowedDomains: jsonb("allowed_domains")
+    .$type<string[]>()
+    .notNull()
+    .$defaultFn(() => []),
   isActive: boolean("is_active").notNull().default(true),
   publicId: uuid("public_id").notNull().defaultRandom().unique(),
   leadWebhookUrl: text("lead_webhook_url").notNull().default(""),

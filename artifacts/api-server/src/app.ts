@@ -55,6 +55,12 @@ app.use(
   }),
 );
 
+// Run startup migrations for new columns
+pool.query(`
+  ALTER TABLE conversations ADD COLUMN IF NOT EXISTS messages JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ALTER TABLE bots ADD COLUMN IF NOT EXISTS allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb;
+`).catch((err: Error) => logger.warn({ err }, "startup migration warning"));
+
 app.use("/api", router);
 
 export default app;

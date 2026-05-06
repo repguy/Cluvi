@@ -70,6 +70,7 @@ export interface Bot {
   systemPrompt: string;
   appearance: BotAppearance;
   notificationsConfig: NotificationsConfig;
+  allowedDomains: string[];
   isActive: boolean;
   publicId: string;
   leadWebhookUrl: string;
@@ -90,8 +91,26 @@ export interface RecentConversation {
   id: string;
   botName: string;
   botColor: string;
+  sessionId: string;
   messageCount: number;
   createdAt: string;
+}
+
+export interface ConversationDetail {
+  id: string;
+  sessionId: string;
+  botName: string;
+  botColor: string;
+  messageCount: number;
+  messages: { role: "user" | "assistant"; content: string }[];
+  createdAt: string;
+}
+
+export interface BotStats {
+  totalConversations: number;
+  totalMessages: number;
+  totalBookings: number;
+  dailyConversations: { date: string; count: number }[];
 }
 
 export interface Booking {
@@ -126,10 +145,18 @@ export const api = {
       req<Bot>(`/bots/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (id: string) =>
       req<{ ok: boolean }>(`/bots/${id}`, { method: "DELETE" }),
+    duplicate: (id: string) =>
+      req<Bot>(`/bots/${id}/duplicate`, { method: "POST" }),
+    getStats: (id: string) =>
+      req<BotStats>(`/bots/${id}/stats`),
   },
   analytics: {
     overview: () => req<AnalyticsOverview>("/analytics"),
     recent: () => req<RecentConversation[]>("/analytics/conversations"),
+  },
+  conversations: {
+    getMessages: (id: string) => req<ConversationDetail>(`/conversations/${id}/messages`),
+    export: () => req<string>("/conversations/export"),
   },
   bookings: {
     list: () => req<Booking[]>("/bookings"),
