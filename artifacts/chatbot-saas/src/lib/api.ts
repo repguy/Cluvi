@@ -15,6 +15,9 @@ async function req<T>(
     const err = await res.json().catch(() => ({ message: res.statusText }));
     throw new Error((err as { message?: string }).message || "Request failed");
   }
+  if (res.status === 204) return null;
+  const ct = res.headers.get("content-type") ?? "";
+  if (ct.includes("text/csv")) return res.text() as unknown as Promise<T>;
   return res.json() as Promise<T>;
 }
 
@@ -36,6 +39,25 @@ export interface BotAppearance {
   phone: string;
   email: string;
   address: string;
+  ownerEmail: string;
+  ownerPhone: string;
+  services: string[];
+  bookingConfirmationMessage: string;
+  officeHours: string;
+  afterHoursMessage: string;
+  soundEnabled: boolean;
+}
+
+export interface NotificationsConfig {
+  resendApiKey: string;
+  resendFromEmail: string;
+  resendEnabled: boolean;
+  twilioAccountSid: string;
+  twilioAuthToken: string;
+  twilioOwnerPhone: string;
+  twilioFromPhone: string;
+  twilioEnabled: boolean;
+  zapierEnabled: boolean;
 }
 
 export interface Bot {
@@ -47,6 +69,7 @@ export interface Bot {
   apiKey: string;
   systemPrompt: string;
   appearance: BotAppearance;
+  notificationsConfig: NotificationsConfig;
   isActive: boolean;
   publicId: string;
   leadWebhookUrl: string;
@@ -59,6 +82,7 @@ export interface AnalyticsOverview {
   activeBots: number;
   totalConversations: number;
   totalMessages: number;
+  totalBookings: number;
   dailyConversations: { date: string; count: number }[];
 }
 
@@ -67,6 +91,20 @@ export interface RecentConversation {
   botName: string;
   botColor: string;
   messageCount: number;
+  createdAt: string;
+}
+
+export interface Booking {
+  id: string;
+  botId: string;
+  botName: string;
+  sessionId: string;
+  name: string;
+  phone: string;
+  service: string;
+  date: string;
+  timePreference: string;
+  status: string;
   createdAt: string;
 }
 
@@ -92,5 +130,11 @@ export const api = {
   analytics: {
     overview: () => req<AnalyticsOverview>("/analytics"),
     recent: () => req<RecentConversation[]>("/analytics/conversations"),
+  },
+  bookings: {
+    list: () => req<Booking[]>("/bookings"),
+    updateStatus: (id: string, status: string) =>
+      req<Booking>(`/bookings/${id}`, { method: "PUT", body: JSON.stringify({ status }) }),
+    export: () => req<string>("/bookings/export"),
   },
 };

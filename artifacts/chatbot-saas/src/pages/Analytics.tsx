@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bot, MessageSquare, Activity, Zap } from "lucide-react";
+import { Bot, MessageSquare, Activity, Zap, CalendarCheck } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -86,7 +86,7 @@ export default function Analytics() {
 
       <main className="flex-1 p-8 space-y-6">
         {/* Stat cards */}
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
           <StatCard
             icon={Bot}
             label="Total Bots"
@@ -113,6 +113,13 @@ export default function Analytics() {
             label="Messages Sent"
             value={overview?.totalMessages ?? 0}
             color="bg-amber-50 text-amber-500"
+            loading={loading}
+          />
+          <StatCard
+            icon={CalendarCheck}
+            label="Bookings"
+            value={overview?.totalBookings ?? 0}
+            color="bg-violet-50 text-violet-500"
             loading={loading}
           />
         </div>

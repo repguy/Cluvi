@@ -7,6 +7,8 @@ import {
   LogOut,
   Plus,
   Zap,
+  CalendarCheck,
+  MessageSquare,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -17,6 +19,8 @@ interface LayoutProps {
 const navItems = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/analytics", icon: BarChart3, label: "Analytics" },
+  { href: "/bookings", icon: CalendarCheck, label: "Bookings" },
+  { href: "/conversations", icon: MessageSquare, label: "Conversations" },
 ];
 
 export default function Layout({ children }: LayoutProps) {
@@ -30,9 +34,7 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
-      {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 w-[220px] bg-[#0f172a] flex flex-col z-30 border-r border-white/5">
-        {/* Logo */}
         <div className="flex items-center gap-2.5 px-5 h-[60px] border-b border-white/5 flex-shrink-0">
           <div className="w-7 h-7 bg-indigo-500 rounded-lg flex items-center justify-center flex-shrink-0">
             <Zap className="w-3.5 h-3.5 text-white" />
@@ -40,7 +42,6 @@ export default function Layout({ children }: LayoutProps) {
           <span className="text-white font-semibold text-[15px] tracking-tight">BotBuilder</span>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-3 pb-2 pt-1">
             Menu
@@ -77,7 +78,6 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </nav>
 
-        {/* New Bot CTA */}
         <div className="px-3 pb-3">
           <button
             onClick={() => navigate("/bots/new")}
@@ -88,7 +88,6 @@ export default function Layout({ children }: LayoutProps) {
           </button>
         </div>
 
-        {/* User */}
         <div className="px-3 pb-4 border-t border-white/5 pt-3 flex-shrink-0">
           <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-white/5 transition-colors group">
             <div className="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-xs font-bold flex-shrink-0">
@@ -109,7 +108,6 @@ export default function Layout({ children }: LayoutProps) {
         </div>
       </aside>
 
-      {/* Main content */}
       <div className="flex-1 ml-[220px] min-h-screen flex flex-col">
         {children}
       </div>

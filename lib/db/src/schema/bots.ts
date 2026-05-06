@@ -22,6 +22,25 @@ export interface BotAppearance {
   phone: string;
   email: string;
   address: string;
+  ownerEmail: string;
+  ownerPhone: string;
+  services: string[];
+  bookingConfirmationMessage: string;
+  officeHours: string;
+  afterHoursMessage: string;
+  soundEnabled: boolean;
+}
+
+export interface NotificationsConfig {
+  resendApiKey: string;
+  resendFromEmail: string;
+  resendEnabled: boolean;
+  twilioAccountSid: string;
+  twilioAuthToken: string;
+  twilioOwnerPhone: string;
+  twilioFromPhone: string;
+  twilioEnabled: boolean;
+  zapierEnabled: boolean;
 }
 
 export const botsTable = pgTable("bots", {
@@ -39,7 +58,7 @@ export const botsTable = pgTable("bots", {
     .$type<BotAppearance>()
     .notNull()
     .$defaultFn(() => ({
-      primaryColor: "#2563EB",
+      primaryColor: "#6366f1",
       botName: "",
       welcomeMessage: "Hi! How can I help you today?",
       fallbackMessage: "Sorry, I didn't quite understand that. Could you rephrase?",
@@ -50,6 +69,27 @@ export const botsTable = pgTable("bots", {
       phone: "",
       email: "",
       address: "",
+      ownerEmail: "",
+      ownerPhone: "",
+      services: [] as string[],
+      bookingConfirmationMessage: "Your appointment has been booked! We'll be in touch shortly to confirm. 🎉",
+      officeHours: "",
+      afterHoursMessage: "",
+      soundEnabled: false,
+    })),
+  notificationsConfig: jsonb("notifications_config")
+    .$type<NotificationsConfig>()
+    .notNull()
+    .$defaultFn(() => ({
+      resendApiKey: "",
+      resendFromEmail: "",
+      resendEnabled: false,
+      twilioAccountSid: "",
+      twilioAuthToken: "",
+      twilioOwnerPhone: "",
+      twilioFromPhone: "",
+      twilioEnabled: false,
+      zapierEnabled: false,
     })),
   isActive: boolean("is_active").notNull().default(true),
   publicId: uuid("public_id").notNull().defaultRandom().unique(),

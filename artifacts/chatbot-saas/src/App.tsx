@@ -5,6 +5,8 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import BotEditor from "./pages/BotEditor";
 import Analytics from "./pages/Analytics";
+import Bookings from "./pages/Bookings";
+import Conversations from "./pages/Conversations";
 import Preview from "./pages/Preview";
 import { Loader2 } from "lucide-react";
 
@@ -44,6 +46,8 @@ function Router() {
     <Switch>
       <Route path="/login" component={() => <AuthRoute component={Login} />} />
       <Route path="/analytics" component={() => <ProtectedRoute component={Analytics} />} />
+      <Route path="/bookings" component={() => <ProtectedRoute component={Bookings} />} />
+      <Route path="/conversations" component={() => <ProtectedRoute component={Conversations} />} />
       <Route path="/bots/:id" component={() => <ProtectedRoute component={BotEditor} />} />
       <Route path="/preview" component={Preview} />
       <Route component={() => <ProtectedRoute component={Dashboard} />} />
