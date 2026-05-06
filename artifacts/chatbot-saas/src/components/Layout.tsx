@@ -9,6 +9,7 @@ import {
   Zap,
   CalendarCheck,
   MessageSquare,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -69,8 +70,12 @@ export default function Layout({ children }: LayoutProps) {
               Bots
             </p>
             <button
-              onClick={() => navigate("/bots/new")}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all duration-150"
+              onClick={() => navigate("/")}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+                location.startsWith("/bots")
+                  ? "bg-indigo-500/10 text-indigo-400"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+              }`}
             >
               <Bot className="w-4 h-4 flex-shrink-0" />
               My Bots
@@ -88,7 +93,18 @@ export default function Layout({ children }: LayoutProps) {
           </button>
         </div>
 
-        <div className="px-3 pb-4 border-t border-white/5 pt-3 flex-shrink-0">
+        <div className="px-3 pb-2 border-t border-white/5 pt-3 flex-shrink-0">
+          <button
+            onClick={() => navigate("/settings")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 mb-1 ${
+              isActive("/settings")
+                ? "bg-indigo-500/10 text-indigo-400"
+                : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+            }`}
+          >
+            <Settings className="w-4 h-4 flex-shrink-0" />
+            Admin Settings
+          </button>
           <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-white/5 transition-colors group">
             <div className="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-xs font-bold flex-shrink-0">
               {user?.username?.[0]?.toUpperCase()}

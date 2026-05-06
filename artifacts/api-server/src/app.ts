@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
@@ -11,6 +12,16 @@ const app: Express = express();
 
 app.set("trust proxy", 1);
 
+// ── Security headers ───────────────────────────────────────────────────────
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // widget.js needs to load cross-origin
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false,
+  })
+);
+
+// ── Request logging ────────────────────────────────────────────────────────
 app.use(
   pinoHttp({
     logger,
@@ -22,45 +33,56 @@ app.use(
         return { statusCode: res.statusCode };
       },
     },
-  }),
+  })
 );
 
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-  }),
-);
+// ── CORS ───────────────────────────────────────────────────────────────────
+app.use(cors({ origin: true, credentials: true }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// ── Body parsing ───────────────────────────────────────────────────────────
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
+// ── Session store ──────────────────────────────────────────────────────────
 const PgStore = connectPgSimple(session);
 
 app.use(
   session({
     store: new PgStore({
       pool,
-      createTableIfMissing: false,
+      createTableIfMissing: true, // auto-creates the session table if absent
     }),
     secret: process.env.SESSION_SECRET ?? "dev-secret-change-in-prod",
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false,
+      secure: process.env.NODE_ENV === "production",
       httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
     },
-  }),
+  })
 );
 
-// Run startup migrations for new columns
-pool.query(`
-  ALTER TABLE conversations ADD COLUMN IF NOT EXISTS messages JSONB NOT NULL DEFAULT '[]'::jsonb;
-  ALTER TABLE bots ADD COLUMN IF NOT EXISTS allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb;
-`).catch((err: Error) => logger.warn({ err }, "startup migration warning"));
+// ── Startup DB migrations (idempotent) ─────────────────────────────────────
+pool
+  .query(`
+    ALTER TABLE conversations ADD COLUMN IF NOT EXISTS messages JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE bots ADD COLUMN IF NOT EXISTS allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb;
+    CREATE TABLE IF NOT EXISTS settings (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      domain_whitelist_enabled BOOLEAN NOT NULL DEFAULT false,
+      rate_limit_enabled BOOLEAN NOT NULL DEFAULT true,
+      rate_limit_chat INTEGER NOT NULL DEFAULT 30,
+      rate_limit_booking INTEGER NOT NULL DEFAULT 10,
+      custom_templates JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `)
+  .catch((err: Error) => logger.warn({ err }, "startup migration warning"));
 
+// ── Routes ─────────────────────────────────────────────────────────────────
 app.use("/api", router);
 
 export default app;

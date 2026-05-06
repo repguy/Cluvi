@@ -892,6 +892,28 @@ export default function BotEditor() {
                       </div>
                     </Section>
 
+                    <Section title="Shareable Link" helper="Send this link to anyone — it opens a branded page with your bot pre-loaded. No embedding needed.">
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono text-slate-600 truncate">
+                          {`${window.location.origin}/p/${bot.publicId}`}
+                        </code>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/p/${bot.publicId}`); }}
+                          className="flex items-center gap-1.5 px-3 py-2.5 border border-slate-200 rounded-lg text-xs text-slate-500 hover:bg-slate-50 transition-colors flex-shrink-0"
+                        >
+                          <Copy className="w-3.5 h-3.5" /> Copy
+                        </button>
+                        <a
+                          href={`/p/${bot.publicId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-2.5 border border-slate-200 rounded-lg text-xs text-slate-500 hover:bg-slate-50 transition-colors flex-shrink-0"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" /> Open
+                        </a>
+                      </div>
+                    </Section>
+
                     <Section title="Bot ID (Public)" helper="Share this with developers who need to reference the bot directly.">
                       <div className="flex items-center gap-2">
                         <code className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono text-slate-600 truncate">

@@ -21,110 +21,71 @@ async function req<T>(
   return res.json() as Promise<T>;
 }
 
-export interface User {
-  id: string;
-  username: string;
-  email: string;
-}
+export interface User { id: string; username: string; email: string }
 
 export interface BotAppearance {
-  primaryColor: string;
-  botName: string;
-  welcomeMessage: string;
-  fallbackMessage: string;
-  tone: string;
-  quickActions: string[];
-  avatarText: string;
-  businessType: string;
-  phone: string;
-  email: string;
-  address: string;
-  ownerEmail: string;
-  ownerPhone: string;
-  services: string[];
-  bookingConfirmationMessage: string;
-  officeHours: string;
-  afterHoursMessage: string;
-  soundEnabled: boolean;
+  primaryColor: string; botName: string; welcomeMessage: string; fallbackMessage: string;
+  tone: string; quickActions: string[]; avatarText: string; businessType: string;
+  phone: string; email: string; address: string; ownerEmail: string; ownerPhone: string;
+  services: string[]; bookingConfirmationMessage: string; officeHours: string;
+  afterHoursMessage: string; soundEnabled: boolean;
 }
 
 export interface NotificationsConfig {
-  resendApiKey: string;
-  resendFromEmail: string;
-  resendEnabled: boolean;
-  twilioAccountSid: string;
-  twilioAuthToken: string;
-  twilioOwnerPhone: string;
-  twilioFromPhone: string;
-  twilioEnabled: boolean;
-  zapierEnabled: boolean;
+  resendApiKey: string; resendFromEmail: string; resendEnabled: boolean;
+  twilioAccountSid: string; twilioAuthToken: string; twilioOwnerPhone: string;
+  twilioFromPhone: string; twilioEnabled: boolean; zapierEnabled: boolean;
 }
 
 export interface Bot {
-  id: string;
-  name: string;
-  description: string;
-  provider: string;
-  model: string;
-  apiKey: string;
-  systemPrompt: string;
-  appearance: BotAppearance;
-  notificationsConfig: NotificationsConfig;
-  allowedDomains: string[];
-  isActive: boolean;
-  publicId: string;
-  leadWebhookUrl: string;
-  createdAt: string;
-  updatedAt: string;
+  id: string; name: string; description: string; provider: string; model: string;
+  apiKey: string; systemPrompt: string; appearance: BotAppearance;
+  notificationsConfig: NotificationsConfig; allowedDomains: string[];
+  isActive: boolean; publicId: string; leadWebhookUrl: string;
+  createdAt: string; updatedAt: string;
+}
+
+export interface AdminSettings {
+  domainWhitelistEnabled: boolean;
+  rateLimitEnabled: boolean;
+  rateLimitChat: number;
+  rateLimitBooking: number;
+  customTemplates: CustomTemplate[];
+}
+
+export interface CustomTemplate {
+  id: string; name: string; icon: string; description: string;
+  provider: string; model: string; systemPrompt: string;
+  quickActions: string[]; services: string[]; businessType: string;
+  welcomeMessage: string; createdAt: string;
 }
 
 export interface AnalyticsOverview {
-  totalBots: number;
-  activeBots: number;
-  totalConversations: number;
-  totalMessages: number;
-  totalBookings: number;
+  totalBots: number; activeBots: number; totalConversations: number;
+  totalMessages: number; totalBookings: number;
   dailyConversations: { date: string; count: number }[];
 }
 
 export interface RecentConversation {
-  id: string;
-  botName: string;
-  botColor: string;
-  sessionId: string;
-  messageCount: number;
-  createdAt: string;
+  id: string; botName: string; botColor: string;
+  sessionId: string; messageCount: number; createdAt: string;
 }
 
 export interface ConversationDetail {
-  id: string;
-  sessionId: string;
-  botName: string;
-  botColor: string;
-  messageCount: number;
-  messages: { role: "user" | "assistant"; content: string }[];
+  id: string; sessionId: string; botName: string; botColor: string;
+  messageCount: number; messages: { role: "user" | "assistant"; content: string }[];
   createdAt: string;
 }
 
 export interface BotStats {
-  totalConversations: number;
-  totalMessages: number;
-  totalBookings: number;
+  totalConversations: number; totalMessages: number; totalBookings: number;
   dailyConversations: { date: string; count: number }[];
 }
 
 export interface Booking {
-  id: string;
-  botId: string;
-  botName: string;
-  sessionId: string;
-  name: string;
-  phone: string;
-  service: string;
-  date: string;
-  timePreference: string;
-  status: string;
-  createdAt: string;
+  id: string; botId: string; botName: string; sessionId: string;
+  name: string; phone: string; service: string; date: string;
+  timePreference: string; status: string; createdAt: string;
 }
 
 export const api = {
@@ -139,16 +100,11 @@ export const api = {
   bots: {
     list: () => req<Bot[]>("/bots"),
     get: (id: string) => req<Bot>(`/bots/${id}`),
-    create: (data: Partial<Bot>) =>
-      req<Bot>("/bots", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: Partial<Bot>) =>
-      req<Bot>(`/bots/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-    delete: (id: string) =>
-      req<{ ok: boolean }>(`/bots/${id}`, { method: "DELETE" }),
-    duplicate: (id: string) =>
-      req<Bot>(`/bots/${id}/duplicate`, { method: "POST" }),
-    getStats: (id: string) =>
-      req<BotStats>(`/bots/${id}/stats`),
+    create: (data: Partial<Bot>) => req<Bot>("/bots", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Bot>) => req<Bot>(`/bots/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) => req<{ ok: boolean }>(`/bots/${id}`, { method: "DELETE" }),
+    duplicate: (id: string) => req<Bot>(`/bots/${id}/duplicate`, { method: "POST" }),
+    getStats: (id: string) => req<BotStats>(`/bots/${id}/stats`),
   },
   analytics: {
     overview: () => req<AnalyticsOverview>("/analytics"),
@@ -163,5 +119,17 @@ export const api = {
     updateStatus: (id: string, status: string) =>
       req<Booking>(`/bookings/${id}`, { method: "PUT", body: JSON.stringify({ status }) }),
     export: () => req<string>("/bookings/export"),
+  },
+  admin: {
+    getSettings: () => req<AdminSettings>("/admin/settings"),
+    updateSettings: (data: Partial<AdminSettings>) =>
+      req<AdminSettings>("/admin/settings", { method: "PUT", body: JSON.stringify(data) }),
+    getTemplates: () => req<CustomTemplate[]>("/admin/templates"),
+    createTemplate: (data: Partial<CustomTemplate>) =>
+      req<CustomTemplate>("/admin/templates", { method: "POST", body: JSON.stringify(data) }),
+    deleteTemplate: (id: string) =>
+      req<{ ok: boolean }>(`/admin/templates/${id}`, { method: "DELETE" }),
+    changePassword: (data: { currentPassword: string; newPassword: string }) =>
+      req<{ ok: boolean }>("/admin/password", { method: "PUT", body: JSON.stringify(data) }),
   },
 };

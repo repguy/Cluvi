@@ -6,6 +6,7 @@ import widgetRouter from "./widget";
 import analyticsRouter from "./analytics";
 import bookingsRouter from "./bookings";
 import conversationsRouter from "./conversations";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(widgetRouter);
 router.use(analyticsRouter);
 router.use(bookingsRouter);
 router.use(conversationsRouter);
+router.use(adminRouter);
 
 export default router;

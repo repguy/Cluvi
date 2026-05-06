@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Bot, Plus, Trash2, Code2, Pencil, ToggleLeft, ToggleRight, MessageSquare, Zap, Globe, Copy, X, Loader2, LayoutTemplate } from "lucide-react";
-import { api, Bot as BotType } from "../lib/api";
+import { api, Bot as BotType, CustomTemplate } from "../lib/api";
 import Layout from "../components/Layout";
 
 const PROVIDER_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -220,6 +220,31 @@ For specific order details (order number, tracking), let them know you'll connec
 ];
 
 function TemplatesModal({ onClose, onSelect }: { onClose: () => void; onSelect: (t: BotTemplate) => void }) {
+  const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([]);
+
+  useEffect(() => {
+    api.admin.getTemplates()
+      .then((data) => setCustomTemplates(data ?? []))
+      .catch(() => {});
+  }, []);
+
+  const allTemplates: BotTemplate[] = [
+    ...TEMPLATES,
+    ...customTemplates.map((ct) => ({
+      id: ct.id,
+      name: ct.name,
+      icon: ct.icon || "🤖",
+      description: ct.description,
+      provider: ct.provider,
+      model: ct.model,
+      systemPrompt: ct.systemPrompt,
+      quickActions: ct.quickActions,
+      services: ct.services,
+      businessType: ct.businessType,
+      welcomeMessage: ct.welcomeMessage,
+    })),
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
       <div
@@ -236,7 +261,7 @@ function TemplatesModal({ onClose, onSelect }: { onClose: () => void; onSelect: 
           </button>
         </div>
         <div className="overflow-y-auto p-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {TEMPLATES.map((t) => (
+          {allTemplates.map((t) => (
             <button
               key={t.id}
               onClick={() => onSelect(t)}
