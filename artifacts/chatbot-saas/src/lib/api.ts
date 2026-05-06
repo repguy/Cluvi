@@ -121,15 +121,15 @@ export const api = {
     export: () => req<string>("/bookings/export"),
   },
   admin: {
-    getSettings: () => req<AdminSettings>("/admin/settings"),
+    getSettings: () => req<AdminSettings>("/admin/settings", {}, [401, 403]),
     updateSettings: (data: Partial<AdminSettings>) =>
-      req<AdminSettings>("/admin/settings", { method: "PUT", body: JSON.stringify(data) }),
-    getTemplates: () => req<CustomTemplate[]>("/admin/templates"),
+      req<AdminSettings>("/admin/settings", { method: "PUT", body: JSON.stringify(data) }, [401, 403]),
+    getTemplates: () => req<CustomTemplate[]>("/admin/templates", {}, [401, 403]),
     createTemplate: (data: Partial<CustomTemplate>) =>
-      req<CustomTemplate>("/admin/templates", { method: "POST", body: JSON.stringify(data) }),
+      req<CustomTemplate>("/admin/templates", { method: "POST", body: JSON.stringify(data) }, [401, 403]),
     deleteTemplate: (id: string) =>
-      req<{ ok: boolean }>(`/admin/templates/${id}`, { method: "DELETE" }),
+      req<{ ok: boolean }>(`/admin/templates/${id}`, { method: "DELETE" }, [401, 403]),
     changePassword: (data: { currentPassword: string; newPassword: string }) =>
-      req<{ ok: boolean }>("/admin/password", { method: "PUT", body: JSON.stringify(data) }),
+      req<{ ok: boolean }>("/admin/password", { method: "PUT", body: JSON.stringify(data) }, [401, 403]),
   },
 };

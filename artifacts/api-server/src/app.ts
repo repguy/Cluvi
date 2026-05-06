@@ -15,7 +15,7 @@ app.set("trust proxy", 1);
 // ── Security headers ───────────────────────────────────────────────────────
 app.use(
   helmet({
-    contentSecurityPolicy: false, // widget.js needs to load cross-origin
+    contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
     crossOriginResourcePolicy: false,
   })
@@ -43,30 +43,17 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-// ── Session store ──────────────────────────────────────────────────────────
-const PgStore = connectPgSimple(session);
-
-app.use(
-  session({
-    store: new PgStore({
-      pool,
-      createTableIfMissing: true, // auto-creates the session table if absent
-    }),
-    secret: process.env.SESSION_SECRET ?? "dev-secret-change-in-prod",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-    },
-  })
-);
-
-// ── Startup DB migrations (idempotent) ─────────────────────────────────────
-pool
+// ── Startup DB migrations (run before session store so the table exists) ───
+await pool
   .query(`
+    CREATE TABLE IF NOT EXISTS "session" (
+      "sid"    varchar      NOT NULL COLLATE "default",
+      "sess"   json         NOT NULL,
+      "expire" timestamp(6) NOT NULL,
+      CONSTRAINT "session_pkey" PRIMARY KEY ("sid") NOT DEFERRABLE INITIALLY IMMEDIATE
+    );
+    CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS messages JSONB NOT NULL DEFAULT '[]'::jsonb;
     ALTER TABLE bots ADD COLUMN IF NOT EXISTS allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb;
     CREATE TABLE IF NOT EXISTS settings (
@@ -81,6 +68,27 @@ pool
     );
   `)
   .catch((err: Error) => logger.warn({ err }, "startup migration warning"));
+
+// ── Session store ──────────────────────────────────────────────────────────
+const PgStore = connectPgSimple(session);
+
+app.use(
+  session({
+    store: new PgStore({
+      pool,
+      // Table is guaranteed to exist from the migration above
+    }),
+    secret: process.env.SESSION_SECRET ?? "dev-secret-change-in-prod",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    },
+  })
+);
 
 // ── Routes ─────────────────────────────────────────────────────────────────
 app.use("/api", router);

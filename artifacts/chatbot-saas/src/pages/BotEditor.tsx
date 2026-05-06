@@ -232,6 +232,7 @@ export default function BotEditor() {
             setCustomModel(data.model);
           }
         })
+        .catch(() => navigate("/"))
         .finally(() => setLoading(false));
     }
   }, [params.id]);

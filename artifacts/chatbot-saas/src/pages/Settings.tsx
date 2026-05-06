@@ -242,17 +242,20 @@ export default function Settings() {
   const [pwError, setPwError] = useState("");
 
   useEffect(() => {
-    Promise.all([api.admin.getSettings(), api.admin.getTemplates()]).then(([s, t]) => {
-      if (s) {
-        setSettings(s);
-        setDwEnabled(s.domainWhitelistEnabled);
-        setRlEnabled(s.rateLimitEnabled);
-        setRlChat(s.rateLimitChat);
-        setRlBooking(s.rateLimitBooking);
-        setTemplates(s.customTemplates);
-      }
-      if (t) setTemplates(t);
-    }).finally(() => setLoading(false));
+    Promise.all([api.admin.getSettings(), api.admin.getTemplates()])
+      .then(([s, t]) => {
+        if (s) {
+          setSettings(s);
+          setDwEnabled(s.domainWhitelistEnabled);
+          setRlEnabled(s.rateLimitEnabled);
+          setRlChat(s.rateLimitChat);
+          setRlBooking(s.rateLimitBooking);
+          setTemplates(s.customTemplates);
+        }
+        if (t) setTemplates(t);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   async function saveSettings() {
