@@ -73,6 +73,9 @@ const DEFAULT_APPEARANCE: BotAppearance = {
   afterHoursMessage: "",
   soundEnabled: false,
   showBranding: true,
+  brandingText: "",
+  brandingUrl: "",
+  proactiveGreetingDelay: 0,
 };
 
 const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
@@ -544,13 +547,42 @@ export default function BotEditor() {
                       ))}
                     </div>
                   </Field>
-                  <div className="flex items-center justify-between pt-1">
-                    <div>
-                      <p className="text-sm font-medium text-slate-700">Show "Powered by BotBuilder"</p>
-                      <p className="text-xs text-slate-400 mt-0.5">Display the branding footer inside the chat widget.</p>
+                  <div className="space-y-3 border-t border-slate-100 pt-3 mt-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Show branding footer</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Show "Powered by …" text at the bottom of the widget.</p>
+                      </div>
+                      <Toggle enabled={appearance.showBranding ?? true} onChange={(v) => updateAppearance("showBranding", v)} />
                     </div>
-                    <Toggle enabled={appearance.showBranding ?? true} onChange={(v) => updateAppearance("showBranding", v)} />
+                    {(appearance.showBranding ?? true) && (
+                      <div className="grid grid-cols-2 gap-3 pl-1">
+                        <Field label="Brand Name" helper='e.g. "Cluvi" — shown as clickable text'>
+                          <Input value={appearance.brandingText ?? ""} onChange={(e) => updateAppearance("brandingText", e.target.value)} placeholder="BotBuilder" />
+                        </Field>
+                        <Field label="Brand URL" helper="Where the brand name links to">
+                          <Input type="url" value={appearance.brandingUrl ?? ""} onChange={(e) => updateAppearance("brandingUrl", e.target.value)} placeholder="https://botbuilder.app" />
+                        </Field>
+                      </div>
+                    )}
                   </div>
+                </Section>
+
+                <Section title="Engagement" helper="Automatically greet visitors to increase chat open rates.">
+                  <Field label="Proactive Greeting (seconds)" helper="Auto-open the chat and send a greeting after this many seconds. Set to 0 to disable.">
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={300}
+                        value={appearance.proactiveGreetingDelay ?? 0}
+                        onChange={(e) => updateAppearance("proactiveGreetingDelay", Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-28"
+                        placeholder="0"
+                      />
+                      <span className="text-xs text-slate-400">seconds delay (0 = off)</span>
+                    </div>
+                  </Field>
                 </Section>
 
                 <Section title="Messages">

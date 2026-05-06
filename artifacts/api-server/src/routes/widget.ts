@@ -117,6 +117,9 @@ router.get("/widget/:publicId/config", async (req, res) => {
       soundEnabled: bot.appearance.soundEnabled ?? false,
       officeHours: bot.appearance.officeHours || "",
       showBranding: bot.appearance.showBranding !== false,
+      brandingText: bot.appearance.brandingText || "",
+      brandingUrl: bot.appearance.brandingUrl || "",
+      proactiveGreetingDelay: bot.appearance.proactiveGreetingDelay ?? 0,
     });
   } catch { res.status(500).json({ message: "Internal server error" }); }
 });
@@ -306,15 +309,62 @@ router.get("/widget.js", async (req, res) => {
   var msgCount = 0;
   var MAX_MSGS = 50;
   var booking = null;
+  var proactiveTimer = null;
 
-  function hexToRgb(hex){var r=/^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);return r?parseInt(r[1],16)+','+parseInt(r[2],16)+','+parseInt(r[3],16):'99,102,241';}
+  function hexToRgb(h){var r=/^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(h);return r?parseInt(r[1],16)+','+parseInt(r[2],16)+','+parseInt(r[3],16):'99,102,241';}
   function apiFetch(path,opts){return fetch(API_BASE+path,Object.assign({headers:{'Content-Type':'application/json'}},opts||{})).then(function(r){return r.json();});}
   function playSound(){if(!cfg||!cfg.soundEnabled)return;try{var ctx=new(window.AudioContext||window.webkitAudioContext)();var o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=880;o.type='sine';g.gain.setValueAtTime(0,ctx.currentTime);g.gain.linearRampToValueAtTime(0.06,ctx.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.3);o.start();o.stop(ctx.currentTime+0.3);}catch(e){}}
   function fmtTime(){var d=new Date();var h=d.getHours(),m=d.getMinutes();return (h%12||12)+':'+(m<10?'0':'')+m+(h<12?' AM':' PM');}
+  function col(){return (cfg&&cfg.primaryColor)||'#6366f1';}
+  function letter(){return ((cfg&&cfg.avatarText)||(cfg&&cfg.name&&cfg.name[0])||'B').charAt(0).toUpperCase();}
+  function adjustColor(hex,pct){var n=parseInt(hex.replace('#',''),16);var r=Math.min(255,Math.max(0,((n>>16)&0xff)+pct));var g=Math.min(255,Math.max(0,((n>>8)&0xff)+pct));var b=Math.min(255,Math.max(0,(n&0xff)+pct));return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);}
+
+  /* ── Markdown renderer ──────────────────────────────────────── */
+  function renderMd(text){
+    var s=text
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\\*\\*([^*]+)\\*\\*/g,'<strong>$1</strong>')
+      .replace(/\\*([^*]+)\\*/g,'<em>$1</em>')
+      .replace(new RegExp('\x60([^\x60]+)\x60','g'),'<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:12px;font-family:monospace">$1</code>')
+      .replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^)]+)\\)/g,'<a href="$2" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-underline-offset:2px">$1</a>')
+      .replace(/^#{1,3}\\s(.+)$/gm,'<strong>$1</strong>')
+      .replace(/^[-*]\\s(.+)$/gm,'<span style="display:block;padding-left:12px">&#x2022; $1</span>')
+      .replace(/^\\d+\\.\\s(.+)$/gm,'<span style="display:block;padding-left:12px">$1</span>')
+      .replace(/\\n/g,'<br>');
+    return s;
+  }
 
   var style=document.createElement('style');style.textContent=${JSON.stringify(css)};document.head.appendChild(style);
   var wrap=document.createElement('div');wrap.id='_cb_w';
-  wrap.innerHTML='<div id="_cb_win" role="dialog" aria-label="Chat with us"><div id="_cb_head"></div><div id="_cb_msgs" aria-live="polite"><div id="_cb_ph"><svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z"/></svg><span>Send us a message!</span></div></div><div id="_cb_qa"></div><div id="_cb_foot"><div id="_cb_form"><input id="_cb_inp" type="text" placeholder="Type a message\u2026" aria-label="Your message" maxlength="1000"/><button id="_cb_snd" aria-label="Send message"><svg fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div><div id="_cb_pw" style="display:none">Powered by <a href="https://botbuilder.app" target="_blank" rel="noopener">BotBuilder</a></div></div></div><button id="_cb_btn" aria-label="Open chat" aria-expanded="false"><span id="_cb_bdg">1</span><svg id="_cb_ico_chat" width="24" height="24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><svg id="_cb_ico_close" width="20" height="20" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" viewBox="0 0 24 24" style="display:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>';
+  wrap.innerHTML=''
+    +'<div id="_cb_win" role="dialog" aria-label="Chat with us">'
+      +'<div id="_cb_head"></div>'
+      +'<div id="_cb_msgs" aria-live="polite">'
+        +'<div id="_cb_ph">'
+          +'<svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z"/></svg>'
+          +'<span>Send us a message!</span>'
+        +'</div>'
+      +'</div>'
+      +'<div id="_cb_qa"></div>'
+      +'<div id="_cb_foot">'
+        +'<div id="_cb_form">'
+          +'<button id="_cb_att" aria-label="Attach image" title="Attach image" style="flex-shrink:0;border:none;background:transparent;cursor:pointer;padding:4px;display:flex;align-items:center;color:#94a3b8;transition:color 0.15s">'
+            +'<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>'
+          +'</button>'
+          +'<input id="_cb_file" type="file" accept="image/*" style="display:none"/>'
+          +'<input id="_cb_inp" type="text" placeholder="Type a message\u2026" aria-label="Your message" maxlength="1000"/>'
+          +'<button id="_cb_snd" aria-label="Send message">'
+            +'<svg fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
+          +'</button>'
+        +'</div>'
+        +'<div id="_cb_pw" style="display:none">Powered by <a id="_cb_pw_a" href="https://botbuilder.app" target="_blank" rel="noopener">BotBuilder</a></div>'
+      +'</div>'
+    +'</div>'
+    +'<button id="_cb_btn" aria-label="Open chat" aria-expanded="false">'
+      +'<span id="_cb_bdg">1</span>'
+      +'<svg id="_cb_ico_chat" width="24" height="24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>'
+      +'<svg id="_cb_ico_close" width="20" height="20" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" viewBox="0 0 24 24" style="display:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+    +'</button>';
   document.body.appendChild(wrap);
 
   var btn=document.getElementById('_cb_btn'),
@@ -324,37 +374,49 @@ router.get("/widget.js", async (req, res) => {
       qa_el=document.getElementById('_cb_qa'),
       inp=document.getElementById('_cb_inp'),
       snd=document.getElementById('_cb_snd'),
+      att=document.getElementById('_cb_att'),
+      fileEl=document.getElementById('_cb_file'),
       head=document.getElementById('_cb_head'),
       pw_el=document.getElementById('_cb_pw'),
+      pw_a=document.getElementById('_cb_pw_a'),
       ico_chat=document.getElementById('_cb_ico_chat'),
       ico_close=document.getElementById('_cb_ico_close');
-
-  function col(){return (cfg&&cfg.primaryColor)||'#6366f1';}
-  function letter(){return ((cfg&&cfg.avatarText)||(cfg&&cfg.name&&cfg.name[0])||'B').charAt(0).toUpperCase();}
 
   function setTheme(c){
     document.documentElement.style.setProperty('--cb-col',c);
     btn.style.backgroundColor=c;
     snd.style.backgroundColor=c;
-    head.style.background='linear-gradient(135deg,'+c+' 0%,'+adjustColor(c,-20)+' 100%)';
-  }
-
-  function adjustColor(hex,pct){
-    var n=parseInt(hex.replace('#',''),16);
-    var r=Math.min(255,Math.max(0,((n>>16)&0xff)+pct));
-    var g=Math.min(255,Math.max(0,((n>>8)&0xff)+pct));
-    var b=Math.min(255,Math.max(0,(n&0xff)+pct));
-    return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+    head.style.background='linear-gradient(135deg,'+c+' 0%,'+adjustColor(c,-22)+' 100%)';
   }
 
   function buildHead(){
-    var c=col();
-    head.innerHTML='<div id="_cb_head_av" style="background:rgba(255,255,255,0.2)">'+letter()+'</div>'
+    head.innerHTML=''
+      +'<div id="_cb_head_av" style="background:rgba(255,255,255,0.2)">'+letter()+'</div>'
       +'<div><div class="_cb_hname">'+(cfg.name||'Assistant')+'</div>'
       +'<div class="_cb_hstatus"><span class="_cb_hdot"></span>Online now</div></div>'
       +'<button id="_cb_x" onclick="window._cbToggle()" aria-label="Close chat">'
       +'<svg width="14" height="14" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
       +'</button>';
+  }
+
+  function buildBranding(){
+    if(cfg.showBranding!==false){
+      pw_el.style.display='block';
+      var label=cfg.brandingText||'BotBuilder';
+      var url=cfg.brandingUrl||'https://botbuilder.app';
+      pw_a.textContent=label;
+      pw_a.href=url;
+    }
+  }
+
+  function scheduleProactive(){
+    var delay=(cfg.proactiveGreetingDelay||0)*1000;
+    if(delay<=0||isOpen||initialized)return;
+    proactiveTimer=setTimeout(function(){
+      if(!isOpen&&!initialized){
+        window._cbToggle();
+      }
+    },delay);
   }
 
   function initConfig(){
@@ -363,10 +425,11 @@ router.get("/widget.js", async (req, res) => {
       cfg=c;
       setTheme(col());
       buildHead();
-      if(cfg.showBranding!==false){pw_el.style.display='block';}
+      buildBranding();
       hidePh();
       addMsg('assistant',cfg.welcomeMessage||'Hi! How can I help you today?');
       if(cfg.quickActions&&cfg.quickActions.length)renderQA(cfg.quickActions);
+      scheduleProactive();
     }).catch(function(){
       head.innerHTML='<div style="color:white;font-weight:600;padding:4px">Chat Assistant</div>';
     });
@@ -376,14 +439,11 @@ router.get("/widget.js", async (req, res) => {
 
   function renderQA(actions){
     qa_el.innerHTML='';
-    var c=col();
-    var rgb=hexToRgb(c);
+    var c=col();var rgb=hexToRgb(c);
     actions.forEach(function(qa){
       var b=document.createElement('button');
-      b.className='_cb_qbtn';
-      b.textContent=qa;
-      b.style.borderColor='rgba('+rgb+',0.4)';
-      b.style.color=c;
+      b.className='_cb_qbtn';b.textContent=qa;
+      b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
       b.onclick=function(){
         qa_el.innerHTML='';
         var low=qa.toLowerCase();
@@ -394,17 +454,17 @@ router.get("/widget.js", async (req, res) => {
     });
   }
 
-  function addMsg(role,text){
+  function addMsg(role,text,isHtml){
     hidePh();
     var c=col();
     var d=document.createElement('div');
     d.className='_cb_msg'+(role==='user'?' _u':'');
     var inner='';
-    if(role==='assistant'){
-      inner+='<div class="_cb_mav" style="background:'+c+'">'+letter()+'</div>';
-    }
+    if(role==='assistant'){inner+='<div class="_cb_mav" style="background:'+c+'">'+letter()+'</div>';}
     inner+='<div>';
-    inner+='<div class="_cb_bub '+(role==='user'?'_cb_user":"_cb_bot")+'"'+(role==='user'?' style="background:'+c+'"':'')+'>'+escHtml(text)+'</div>';
+    var bubbleContent=isHtml?text:renderMd(text);
+    inner+='<div class="_cb_bub '+(role==='user'?'_cb_user":"_cb_bot")
+      +'"'+(role==='user'?' style="background:'+c+'"':'')+'>'+bubbleContent+'</div>';
     inner+='<div class="_cb_ts">'+fmtTime()+'</div>';
     inner+='</div>';
     d.innerHTML=inner;
@@ -412,13 +472,30 @@ router.get("/widget.js", async (req, res) => {
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
-  function escHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br>');}
+  function addImageMsg(role,src,filename){
+    hidePh();
+    var c=col();
+    var d=document.createElement('div');
+    d.className='_cb_msg'+(role==='user'?' _u':'');
+    var inner='';
+    if(role==='assistant'){inner+='<div class="_cb_mav" style="background:'+c+'">'+letter()+'</div>';}
+    inner+='<div>';
+    inner+='<div class="_cb_bub '+(role==='user'?'_cb_user":"_cb_bot")+'"'
+      +(role==='user'?' style="background:'+c+';padding:6px"':' style="padding:6px"')+'>'
+      +'<img src="'+src+'" alt="'+(filename||'image')+'" style="max-width:180px;max-height:160px;border-radius:8px;display:block;cursor:pointer" onclick="window.open(this.src)">'
+      +'<span style="display:block;font-size:10px;opacity:0.7;margin-top:4px;text-align:center">'+(filename||'image')+'</span>'
+      +'</div>';
+    inner+='<div class="_cb_ts">'+fmtTime()+'</div>';
+    inner+='</div>';
+    d.innerHTML=inner;
+    msgs_el.appendChild(d);
+    setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
+  }
 
   function showTyping(){
     var c=col();
     var d=document.createElement('div');
-    d.id='_cb_typing';
-    d.className='_cb_dots_wrap';
+    d.id='_cb_typing';d.className='_cb_dots_wrap';
     d.innerHTML='<div class="_cb_mav" style="background:'+c+'">'+letter()+'</div>'
       +'<div class="_cb_dots"><span></span><span></span><span></span></div>';
     msgs_el.appendChild(d);
@@ -426,14 +503,14 @@ router.get("/widget.js", async (req, res) => {
   }
 
   function hideTyping(){var t=document.getElementById('_cb_typing');if(t)t.remove();}
-  function setInputDisabled(v){inp.disabled=v;snd.disabled=v;}
+  function setInputDisabled(v){inp.disabled=v;snd.disabled=v;att.disabled=v;}
 
   function sendToAI(attempt){
     attempt=attempt||1;
     loading=true;
     setInputDisabled(true);
     showTyping();
-    var delay=400+Math.random()*700;
+    var delay=400+Math.random()*600;
     apiFetch('/api/widget/'+BOT_ID+'/chat',{method:'POST',body:JSON.stringify({messages:msgs,sessionId:SESSION_ID})})
       .then(function(d){
         setTimeout(function(){
@@ -449,9 +526,7 @@ router.get("/widget.js", async (req, res) => {
       })
       .catch(function(){
         if(attempt<2){
-          hideTyping();
-          loading=false;
-          setInputDisabled(false);
+          hideTyping();loading=false;setInputDisabled(false);
           setTimeout(function(){sendToAI(2);},1200);
         } else {
           setTimeout(function(){
@@ -459,8 +534,7 @@ router.get("/widget.js", async (req, res) => {
             var fb=(cfg&&cfg.fallbackMessage)||'Sorry, please try again later.';
             msgs.push({role:'assistant',content:fb});
             addMsg('assistant',fb);
-            loading=false;
-            setInputDisabled(false);
+            loading=false;setInputDisabled(false);
           },delay);
         }
       });
@@ -468,26 +542,41 @@ router.get("/widget.js", async (req, res) => {
 
   function send(text){
     if(!text||!text.trim()||loading)return;
-    if(msgCount>=MAX_MSGS){addMsg('assistant','Message limit reached for this session. Please refresh to continue.');return;}
+    if(msgCount>=MAX_MSGS){addMsg('assistant','Message limit reached. Please refresh to continue.');return;}
     if(booking!==null){
-      addMsg('user',text.trim());
-      msgCount++;
-      handleBookingInput(text.trim());
-      inp.value='';
-      return;
+      addMsg('user',text.trim());msgCount++;
+      handleBookingInput(text.trim());inp.value='';return;
     }
-    qa_el.innerHTML='';
-    msgCount++;
+    qa_el.innerHTML='';msgCount++;
     msgs.push({role:'user',content:text.trim()});
-    addMsg('user',text.trim());
-    inp.value='';
+    addMsg('user',text.trim());inp.value='';
     var low=text.toLowerCase();
-    if(low.indexOf('book')>=0||low.indexOf('appointment')>=0||low.indexOf('schedule')>=0){
-      startBooking();return;
-    }
+    if(low.indexOf('book')>=0||low.indexOf('appointment')>=0||low.indexOf('schedule')>=0){startBooking();return;}
     sendToAI();
   }
 
+  /* ── Image upload ──────────────────────────────────────────── */
+  att.onclick=function(){fileEl.click();};
+  att.onmouseenter=function(){att.style.color=col();};
+  att.onmouseleave=function(){att.style.color='#94a3b8';};
+  fileEl.onchange=function(){
+    var file=fileEl.files&&fileEl.files[0];
+    if(!file)return;
+    if(file.size>5*1024*1024){addMsg('assistant','Please attach images smaller than 5 MB.');fileEl.value='';return;}
+    var reader=new FileReader();
+    reader.onload=function(e){
+      var dataUrl=e.target.result;
+      addImageMsg('user',dataUrl,file.name);
+      msgCount++;
+      var textNote='[User attached image: '+file.name+']';
+      msgs.push({role:'user',content:textNote});
+      fileEl.value='';
+      if(!loading)sendToAI();
+    };
+    reader.readAsDataURL(file);
+  };
+
+  /* ── Booking flow ──────────────────────────────────────────── */
   function startBooking(){
     booking={step:'name',name:'',phone:'',service:'',date:'',time:''};
     qa_el.innerHTML='';
@@ -498,7 +587,7 @@ router.get("/widget.js", async (req, res) => {
     if(!booking)return;
     if(booking.step==='name'){
       booking.name=text;booking.step='phone';
-      setTimeout(function(){addMsg('assistant','Nice to meet you, '+escHtml(text)+'!\\nWhat\\'s the best phone number to reach you?');},350);
+      setTimeout(function(){addMsg('assistant','Nice to meet you, **'+text+'**! What\\'s the best phone number to reach you?');},350);
     } else if(booking.step==='phone'){
       booking.phone=text;booking.step='service';
       var svcs=(cfg&&cfg.services&&cfg.services.length)?cfg.services:[];
@@ -520,59 +609,55 @@ router.get("/widget.js", async (req, res) => {
 
   function showServiceBtns(svcs){
     var c=col();var rgb=hexToRgb(c);
-    var container=document.createElement('div');container.className='_cb_wr';
+    var cont=document.createElement('div');cont.className='_cb_wr';
     svcs.forEach(function(s){
       var b=document.createElement('button');b.className='_cb_qbtn';
       b.textContent=s;b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
       b.onclick=function(){
-        container.remove();addMsg('user',s);
+        cont.remove();addMsg('user',s);
         booking.service=s;booking.step='date';
         setTimeout(function(){addMsg('assistant','Great choice! What date works for you?');showDatePicker();},350);
       };
-      container.appendChild(b);
+      cont.appendChild(b);
     });
-    msgs_el.appendChild(container);
+    msgs_el.appendChild(cont);
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
   function showDatePicker(){
-    var c=col();
-    var today=new Date().toISOString().split('T')[0];
-    var container=document.createElement('div');container.className='_cb_wr';
+    var c=col();var today=new Date().toISOString().split('T')[0];
+    var cont=document.createElement('div');cont.className='_cb_wr';cont.style.alignItems='center';
     var di=document.createElement('input');di.type='date';di.min=today;
     di.style.cssText='border:1.5px solid #e2e8f0;border-radius:10px;padding:8px 12px;font-size:13px;color:#1e293b;outline:none;cursor:pointer;background:#fff;flex:1;min-width:0';
-    var pb=document.createElement('button');
-    pb.textContent='Confirm';
-    pb.style.cssText='background:'+c+';color:white;border:none;border-radius:10px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;transition:opacity 0.15s';
-    pb.onmouseenter=function(){pb.style.opacity='0.85';};pb.onmouseleave=function(){pb.style.opacity='1';};
+    var pb=document.createElement('button');pb.textContent='Confirm';
+    pb.style.cssText='background:'+c+';color:white;border:none;border-radius:10px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0';
     pb.onclick=function(){
       if(!di.value)return;
       var d=new Date(di.value+'T12:00:00');
       var fmt=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-      container.remove();addMsg('user',fmt);
+      cont.remove();addMsg('user',fmt);
       booking.date=di.value;booking.step='time';
       setTimeout(function(){addMsg('assistant','Almost done! Do you prefer morning or afternoon?');showTimeBtns();},350);
     };
-    container.style.alignItems='center';
-    container.appendChild(di);container.appendChild(pb);
-    msgs_el.appendChild(container);
+    cont.appendChild(di);cont.appendChild(pb);
+    msgs_el.appendChild(cont);
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
   function showTimeBtns(){
     var c=col();var rgb=hexToRgb(c);
-    var container=document.createElement('div');container.className='_cb_wr';
+    var cont=document.createElement('div');cont.className='_cb_wr';
     [['Morning','\u2600\ufe0f Morning'],['Afternoon','\uD83C\uDF24\uFE0F Afternoon'],['Evening','\uD83C\uDF19 Evening']].forEach(function(t){
       var b=document.createElement('button');b.className='_cb_qbtn';
       b.textContent=t[1];b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
       b.onclick=function(){
-        container.remove();addMsg('user',t[0]);
+        cont.remove();addMsg('user',t[0]);
         booking.time=t[0];booking.step='confirm';
         setTimeout(function(){showSummary();},350);
       };
-      container.appendChild(b);
+      cont.appendChild(b);
     });
-    msgs_el.appendChild(container);
+    msgs_el.appendChild(cont);
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
@@ -580,24 +665,17 @@ router.get("/widget.js", async (req, res) => {
     var c=col();
     var d=new Date(booking.date+'T12:00:00');
     var ds=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-    var summary='\uD83D\uDCCB Booking Summary\\n'
-      +'\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\\n'
-      +'\uD83D\uDC64 '+booking.name+'\\n'
-      +'\uD83D\uDCDE '+booking.phone+'\\n'
-      +'\u2699\uFE0F '+booking.service+'\\n'
-      +'\uD83D\uDCC5 '+ds+'\\n'
-      +'\uD83D\uDD50 '+booking.time;
-    addMsg('assistant',summary);
-    var container=document.createElement('div');container.className='_cb_wr';
+    addMsg('assistant','\uD83D\uDCCB **Booking Summary**\\n\\n\uD83D\uDC64 '+booking.name+'\\n\uD83D\uDCDE '+booking.phone+'\\n\u2699\uFE0F '+booking.service+'\\n\uD83D\uDCC5 '+ds+'\\n\uD83D\uDD50 '+booking.time);
+    var cont=document.createElement('div');cont.className='_cb_wr';
     var cfm=document.createElement('button');cfm.className='_cb_qbtn';
     cfm.textContent='\u2713 Confirm Booking';
     cfm.style.cssText='background:'+c+';color:white;border-color:'+c+';font-weight:700';
-    cfm.onclick=function(){container.remove();addMsg('user','Confirm');confirmBooking();};
+    cfm.onclick=function(){cont.remove();addMsg('user','Confirm');confirmBooking();};
     var can=document.createElement('button');can.className='_cb_qbtn';
     can.textContent='\u2715 Cancel';can.style.borderColor='rgba(239,68,68,0.4)';can.style.color='#ef4444';
-    can.onclick=function(){container.remove();booking=null;addMsg('assistant','No problem at all! Is there anything else I can help you with?');};
-    container.appendChild(cfm);container.appendChild(can);
-    msgs_el.appendChild(container);
+    can.onclick=function(){cont.remove();booking=null;addMsg('assistant','No problem! Anything else I can help with?');};
+    cont.appendChild(cfm);cont.appendChild(can);
+    msgs_el.appendChild(cont);
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
@@ -607,18 +685,17 @@ router.get("/widget.js", async (req, res) => {
       body:JSON.stringify({sessionId:SESSION_ID,name:booking.name,phone:booking.phone,service:booking.service,date:booking.date,timePreference:booking.time})
     }).then(function(){
       var msg=(cfg&&cfg.bookingConfirmationMessage)||'Your appointment is confirmed! We\\'ll be in touch shortly. \uD83C\uDF89';
-      addMsg('assistant',msg);
-      booking=null;
-      playSound();
+      addMsg('assistant',msg);booking=null;playSound();
     }).catch(function(){
-      addMsg('assistant','Oops, something went wrong submitting the booking. Please call us directly to schedule.');
-      booking=null;
+      addMsg('assistant','Oops, something went wrong. Please call us directly to schedule.');booking=null;
     });
   }
 
+  /* ── Toggle ────────────────────────────────────────────────── */
   window._cbToggle=function(){
     isOpen=!isOpen;
     if(isOpen){
+      if(proactiveTimer){clearTimeout(proactiveTimer);proactiveTimer=null;}
       win.classList.add('_open');
       btn.setAttribute('aria-expanded','true');
       bdg.style.display='none';
@@ -637,6 +714,20 @@ router.get("/widget.js", async (req, res) => {
   btn.onclick=window._cbToggle;
   snd.onclick=function(){send(inp.value);};
   inp.onkeydown=function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send(inp.value);}};
+
+  /* ── Boot: schedule proactive only after config is known ───── */
+  /* We prime the config fetch here so proactive timing is accurate */
+  apiFetch('/api/widget/'+BOT_ID+'/config').then(function(c){
+    if(c.message||isOpen||initialized)return;
+    cfg=c;
+    var delay=(cfg.proactiveGreetingDelay||0)*1000;
+    if(delay>0){
+      proactiveTimer=setTimeout(function(){
+        if(!isOpen&&!initialized){window._cbToggle();}
+      },delay);
+    }
+    setTheme(col());
+  }).catch(function(){});
 
   setTheme('#6366f1');
 })();`;

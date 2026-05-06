@@ -30,6 +30,9 @@ export interface BotAppearance {
   afterHoursMessage: string;
   soundEnabled: boolean;
   showBranding: boolean;
+  brandingText?: string;
+  brandingUrl?: string;
+  proactiveGreetingDelay?: number;
 }
 
 export interface NotificationsConfig {
