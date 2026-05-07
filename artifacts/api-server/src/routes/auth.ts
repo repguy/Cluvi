@@ -30,50 +30,9 @@ function getIp(req: import("express").Request) {
   return (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
 }
 
-// ── Register ───────────────────────────────────────────────────────────────
-router.post("/auth/register", async (req, res) => {
-  if (!checkAuthLimit(getIp(req))) {
-    res.status(429).json({ message: "Too many attempts. Please wait 15 minutes." });
-    return;
-  }
-
-  try {
-    const { username, email, password } = req.body as { username: string; email: string; password: string };
-
-    if (!username?.trim() || !email?.trim() || !password?.trim()) {
-      res.status(400).json({ message: "Username, email, and password are required" });
-      return;
-    }
-    if (password.length < 6) {
-      res.status(400).json({ message: "Password must be at least 6 characters" });
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      res.status(400).json({ message: "Please enter a valid email address" });
-      return;
-    }
-
-    const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email.toLowerCase().trim())).limit(1);
-    if (existing.length > 0) {
-      res.status(409).json({ message: "An account with that email already exists" });
-      return;
-    }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    const [user] = await db
-      .insert(usersTable)
-      .values({ username: username.trim().slice(0, 50), email: email.toLowerCase().trim(), passwordHash })
-      .returning();
-
-    req.session.userId = user.id;
-    req.session.save((err) => {
-      if (err) { req.log.error({ err }, "session save error after register"); }
-    });
-    res.status(201).json({ id: user.id, username: user.username, email: user.email });
-  } catch (err) {
-    req.log.error({ err }, "register error");
-    res.status(500).json({ message: "Registration failed. Please try again." });
-  }
+// ── Register — disabled (single-owner mode) ────────────────────────────────
+router.post("/auth/register", (_req, res) => {
+  res.status(403).json({ message: "Registration is disabled on this instance." });
 });
 
 // ── Login ──────────────────────────────────────────────────────────────────

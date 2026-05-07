@@ -1,17 +1,15 @@
 import { useState, FormEvent } from "react";
 import { useLocation } from "wouter";
-import { Zap, Eye, EyeOff, Bot, Puzzle, Shield } from "lucide-react";
+import { Zap, Eye, EyeOff, Bot, Puzzle, Shield, Lock } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function Login() {
-  const [tab, setTab] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [username, setUsername] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login, register } = useAuth();
+  const { login } = useAuth();
   const [, navigate] = useLocation();
 
   async function handleSubmit(e: FormEvent) {
@@ -19,11 +17,7 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      if (tab === "login") {
-        await login(email, password);
-      } else {
-        await register(username, email, password);
-      }
+      await login(email, password);
       navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -106,51 +100,14 @@ export default function Login() {
           </div>
 
           <div className="mb-7">
-            <h2 className="text-2xl font-bold text-white mb-1">
-              {tab === "login" ? "Welcome back" : "Create account"}
-            </h2>
-            <p className="text-slate-500 text-sm">
-              {tab === "login"
-                ? "Sign in to your dashboard"
-                : "Start building AI chatbots today"}
-            </p>
-          </div>
-
-          {/* Tab toggle */}
-          <div className="flex bg-white/5 rounded-xl p-1 mb-6 border border-white/5">
-            {(["login", "register"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => { setTab(t); setError(""); }}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-                  tab === t
-                    ? "bg-indigo-500 text-white shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                {t === "login" ? "Sign In" : "Register"}
-              </button>
-            ))}
+            <div className="flex items-center gap-2 mb-2">
+              <h2 className="text-2xl font-bold text-white">Welcome back</h2>
+              <Lock className="w-4 h-4 text-slate-500 mt-0.5" />
+            </div>
+            <p className="text-slate-500 text-sm">Sign in to your dashboard</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {tab === "register" && (
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                  Username
-                </label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="yourname"
-                  required
-                  autoComplete="username"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                />
-              </div>
-            )}
-
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">
                 Email
@@ -175,10 +132,10 @@ export default function Login() {
                   type={showPass ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min. 6 characters"
+                  placeholder="Your password"
                   required
                   minLength={6}
-                  autoComplete={tab === "login" ? "current-password" : "new-password"}
+                  autoComplete="current-password"
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 pr-10 text-white placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                 />
                 <button
@@ -213,13 +170,14 @@ export default function Login() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
               )}
-              {loading
-                ? "Please wait..."
-                : tab === "login"
-                ? "Sign In"
-                : "Create Account"}
+              {loading ? "Signing in…" : "Sign In"}
             </button>
           </form>
+
+          <p className="text-center text-slate-600 text-xs mt-8 flex items-center justify-center gap-1.5">
+            <Lock className="w-3 h-3" />
+            Private instance — access restricted
+          </p>
         </div>
       </div>
     </div>
