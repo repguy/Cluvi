@@ -1,8 +1,12 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Bot, Plus, Trash2, Code2, Pencil, ToggleLeft, ToggleRight, MessageSquare, Zap, Globe, Copy, X, Loader2, LayoutTemplate } from "lucide-react";
+import { Bot, Plus, Trash2, Code2, Pencil, ToggleLeft, ToggleRight, MessageSquare, Zap, Globe, Copy, X, Loader2, LayoutTemplate, CalendarCheck } from "lucide-react";
 import { api, Bot as BotType, CustomTemplate } from "../lib/api";
+
 import Layout from "../components/Layout";
+
+interface BotMiniStats { conversations: number; bookings: number; lastActive: string | null; }
+type MiniStatsMap = Record<string, BotMiniStats>;
 
 const PROVIDER_META: Record<string, { label: string; color: string; bg: string }> = {
   anthropic: { label: "Claude", color: "text-orange-600", bg: "bg-orange-50 border-orange-100" },
@@ -288,13 +292,26 @@ function TemplatesModal({ onClose, onSelect }: { onClose: () => void; onSelect: 
   );
 }
 
+function timeAgo(dateStr: string | null): string {
+  if (!dateStr) return "No chats yet";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "Just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 function BotCard({
   bot,
+  miniStats,
   onDelete,
   onToggle,
   onDuplicate,
 }: {
   bot: BotType;
+  miniStats?: BotMiniStats;
   onDelete: (id: string) => void;
   onToggle: (id: string, active: boolean) => void;
   onDuplicate: (id: string) => void;
@@ -363,7 +380,7 @@ function BotCard({
           </button>
         </div>
 
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
           <span className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-md border ${provider.bg} ${provider.color}`}>
             {provider.label}
           </span>
@@ -373,6 +390,21 @@ function BotCard({
           <span className={`ml-auto text-xs font-medium ${bot.isActive ? "text-emerald-600" : "text-slate-400"}`}>
             {bot.isActive ? "● Live" : "○ Off"}
           </span>
+        </div>
+
+        {/* Mini stats */}
+        <div className="flex items-center gap-3 py-2.5 px-3 bg-slate-50 rounded-lg mb-3 text-xs text-slate-500">
+          <span className="flex items-center gap-1">
+            <MessageSquare className="w-3 h-3 text-indigo-400" />
+            {miniStats?.conversations ?? 0} chats
+          </span>
+          <span className="text-slate-200">|</span>
+          <span className="flex items-center gap-1">
+            <CalendarCheck className="w-3 h-3 text-violet-400" />
+            {miniStats?.bookings ?? 0} bookings
+          </span>
+          <span className="text-slate-200 ml-auto">|</span>
+          <span className="text-slate-400 text-[11px]">{timeAgo(miniStats?.lastActive ?? null)}</span>
         </div>
 
         <div className="flex gap-2 pt-1 border-t border-slate-100">
@@ -413,13 +445,17 @@ function BotCard({
 
 export default function Dashboard() {
   const [bots, setBots] = useState<BotType[]>([]);
+  const [miniStats, setMiniStats] = useState<MiniStatsMap>({});
   const [loading, setLoading] = useState(true);
   const [showTemplates, setShowTemplates] = useState(false);
   const [, navigate] = useLocation();
 
   useEffect(() => {
-    api.bots.list()
-      .then((data) => setBots(data ?? []))
+    Promise.all([api.bots.list(), api.bots.miniStats()])
+      .then(([data, stats]) => {
+        setBots(data ?? []);
+        setMiniStats(stats ?? {});
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -532,6 +568,7 @@ export default function Dashboard() {
               <BotCard
                 key={bot.id}
                 bot={bot}
+                miniStats={miniStats[bot.id]}
                 onDelete={handleDelete}
                 onToggle={handleToggle}
                 onDuplicate={handleDuplicate}

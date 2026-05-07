@@ -32,9 +32,19 @@ export interface BotAppearance {
 }
 
 export interface NotificationsConfig {
-  resendApiKey: string; resendFromEmail: string; resendEnabled: boolean;
-  twilioAccountSid: string; twilioAuthToken: string; twilioOwnerPhone: string;
-  twilioFromPhone: string; twilioEnabled: boolean; zapierEnabled: boolean;
+  resendEnabled: boolean;
+  resendFromEmail: string;
+  twilioEnabled: boolean;
+  twilioOwnerPhone: string;
+  twilioWhatsappEnabled: boolean;
+  twilioWhatsappTo: string;
+  twilioWhatsappFrom: string;
+  telegramEnabled: boolean;
+  telegramBotToken: string;
+  telegramChatId: string;
+  discordEnabled: boolean;
+  discordWebhookUrl: string;
+  zapierEnabled: boolean;
 }
 
 export interface Bot {
@@ -63,7 +73,9 @@ export interface CustomTemplate {
 export interface AnalyticsOverview {
   totalBots: number; activeBots: number; totalConversations: number;
   totalMessages: number; totalBookings: number;
+  totalBookingsThisMonth: number; conversionRate: string; peakHour: number | null;
   dailyConversations: { date: string; count: number }[];
+  dailyBookings: { date: string; count: number }[];
 }
 
 export interface RecentConversation {
@@ -99,6 +111,7 @@ export const api = {
   },
   bots: {
     list: () => req<Bot[]>("/bots"),
+    miniStats: () => req<Record<string, { conversations: number; bookings: number; lastActive: string | null }>>("/bots/mini-stats"),
     get: (id: string) => req<Bot>(`/bots/${id}`),
     create: (data: Partial<Bot>) => req<Bot>("/bots", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<Bot>) => req<Bot>(`/bots/${id}`, { method: "PUT", body: JSON.stringify(data) }),

@@ -197,27 +197,136 @@ router.post("/widget/:publicId/booking", async (req, res) => {
       }
     }
 
-    const { sessionId, name, phone, service, date, timePreference } = req.body as { sessionId?: string; name: string; phone: string; service: string; date: string; timePreference: string };
+    const { sessionId, name, phone, service, date, timePreference, email: customerEmail } = req.body as { sessionId?: string; name: string; phone: string; service: string; date: string; timePreference: string; email?: string };
     const [booking] = await db.insert(bookingsTable).values({ botId: bot.id, sessionId: sessionId ?? "", name, phone, service, date, timePreference }).returning();
 
     const nc = bot.notificationsConfig;
     const businessName = bot.appearance.botName || bot.name;
     const ownerEmail = bot.appearance.ownerEmail;
 
+    // Global credentials from env vars
+    const resendApiKey = process.env.RESEND_API_KEY;
+    const resendFromEmail = process.env.RESEND_FROM_EMAIL || nc?.resendFromEmail || "bookings@cluvi.app";
+    const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+    const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+    const twilioFromPhone = process.env.TWILIO_FROM_PHONE;
+    const twilioWhatsappFrom = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
+
     (async () => {
-      if (nc?.resendEnabled && nc.resendApiKey && ownerEmail) {
+      // ── Owner email via Resend (global key) ───────────────────
+      if (nc?.resendEnabled && resendApiKey && ownerEmail) {
         try {
-          await fetch("https://api.resend.com/emails", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${nc.resendApiKey}` }, body: JSON.stringify({ from: nc.resendFromEmail || "bookings@botbuilder.app", to: [ownerEmail], subject: `New Booking — ${businessName}`, html: `<h2>New Booking</h2><p><b>Name:</b> ${name}</p><p><b>Phone:</b> ${phone}</p><p><b>Service:</b> ${service}</p><p><b>Date:</b> ${date}</p><p><b>Time:</b> ${timePreference}</p>` }) });
+          await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${resendApiKey}` },
+            body: JSON.stringify({
+              from: resendFromEmail,
+              to: [ownerEmail],
+              subject: `New Booking — ${businessName}`,
+              html: `<h2>New Booking</h2><p><b>Name:</b> ${name}</p><p><b>Phone:</b> ${phone}</p><p><b>Service:</b> ${service}</p><p><b>Date:</b> ${date}</p><p><b>Time:</b> ${timePreference}</p>`
+            })
+          });
         } catch { /* ignore */ }
       }
-      if (nc?.twilioEnabled && nc.twilioAccountSid && nc.twilioAuthToken && nc.twilioOwnerPhone) {
+
+      // ── Customer confirmation email via Resend ─────────────────
+      if (nc?.resendEnabled && resendApiKey && customerEmail) {
         try {
-          const creds = Buffer.from(`${nc.twilioAccountSid}:${nc.twilioAuthToken}`).toString("base64");
-          await fetch(`https://api.twilio.com/2010-04-01/Accounts/${nc.twilioAccountSid}/Messages.json`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${creds}` }, body: new URLSearchParams({ To: nc.twilioOwnerPhone, From: nc.twilioFromPhone || nc.twilioOwnerPhone, Body: `New booking at ${businessName}: ${name} | ${phone} | ${service} | ${date} | ${timePreference}` }).toString() });
+          await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${resendApiKey}` },
+            body: JSON.stringify({
+              from: resendFromEmail,
+              to: [customerEmail],
+              subject: `Your appointment at ${businessName} is confirmed!`,
+              html: `<div style="font-family:sans-serif;max-width:500px"><h2>You're booked! 🎉</h2><p>Hi ${name}, thanks for booking with <b>${businessName}</b>.</p><table style="border-collapse:collapse;width:100%"><tr><td style="padding:6px 0;color:#555">Service:</td><td style="padding:6px 0;font-weight:600">${service}</td></tr><tr><td style="padding:6px 0;color:#555">Date:</td><td style="padding:6px 0;font-weight:600">${date}</td></tr><tr><td style="padding:6px 0;color:#555">Time:</td><td style="padding:6px 0;font-weight:600">${timePreference}</td></tr><tr><td style="padding:6px 0;color:#555">Phone:</td><td style="padding:6px 0;font-weight:600">${phone}</td></tr></table><p style="margin-top:16px">We'll call to confirm your appointment soon.</p><p>See you! — ${businessName} Team</p></div>`
+            })
+          });
         } catch { /* ignore */ }
       }
+
+      // ── Owner SMS via Twilio (global credentials) ──────────────
+      if (nc?.twilioEnabled && twilioAccountSid && twilioAuthToken && nc.twilioOwnerPhone) {
+        try {
+          const creds = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64");
+          await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${creds}` },
+            body: new URLSearchParams({
+              To: nc.twilioOwnerPhone,
+              From: twilioFromPhone || nc.twilioOwnerPhone,
+              Body: `New booking at ${businessName}: ${name} | ${phone} | ${service} | ${date} | ${timePreference}`
+            }).toString()
+          });
+        } catch { /* ignore */ }
+      }
+
+      // ── Owner WhatsApp via Twilio ──────────────────────────────
+      if (nc?.twilioWhatsappEnabled && twilioAccountSid && twilioAuthToken && nc.twilioWhatsappTo) {
+        try {
+          const creds = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64");
+          await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${creds}` },
+            body: new URLSearchParams({
+              To: nc.twilioWhatsappTo,
+              From: nc.twilioWhatsappFrom || twilioWhatsappFrom,
+              Body: `🔔 New Booking at ${businessName}!\n\n👤 ${name}\n📞 ${phone}\n🛍️ ${service}\n📅 ${date} ${timePreference}`
+            }).toString()
+          });
+        } catch { /* ignore */ }
+      }
+
+      // ── Telegram ───────────────────────────────────────────────
+      if (nc?.telegramEnabled && nc.telegramBotToken && nc.telegramChatId) {
+        try {
+          await fetch(`https://api.telegram.org/bot${nc.telegramBotToken}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: nc.telegramChatId,
+              text: `🔔 New Booking at ${businessName}!\n\n👤 Name: ${name}\n📞 Phone: ${phone}\n🛍️ Service: ${service}\n📅 Date: ${date}\n🕐 Time: ${timePreference}\n\nReply to confirm! ✅`,
+              parse_mode: "HTML"
+            })
+          });
+        } catch { /* ignore */ }
+      }
+
+      // ── Discord webhook ────────────────────────────────────────
+      if (nc?.discordEnabled && nc.discordWebhookUrl) {
+        try {
+          await fetch(nc.discordWebhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: `${businessName} Bot`,
+              embeds: [{
+                title: "🔔 New Booking!",
+                color: 3447003,
+                fields: [
+                  { name: "👤 Name", value: name, inline: true },
+                  { name: "📞 Phone", value: phone, inline: true },
+                  { name: "🛍️ Service", value: service, inline: true },
+                  { name: "📅 Date", value: date, inline: true },
+                  { name: "🕐 Time", value: timePreference, inline: true }
+                ],
+                footer: { text: "Powered by Cluvi" },
+                timestamp: new Date().toISOString()
+              }]
+            })
+          });
+        } catch { /* ignore */ }
+      }
+
+      // ── Zapier / custom webhook ────────────────────────────────
       if (bot.leadWebhookUrl) {
-        try { await fetch(bot.leadWebhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "booking", businessName, name, phone, service, date, timePreference }) }); } catch { /* ignore */ }
+        try {
+          await fetch(bot.leadWebhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "booking", businessName, name, phone, service, date, timePreference })
+          });
+        } catch { /* ignore */ }
       }
     })();
 
@@ -578,7 +687,7 @@ router.get("/widget.js", async (req, res) => {
 
   /* ── Booking flow ──────────────────────────────────────────── */
   function startBooking(){
-    booking={step:'name',name:'',phone:'',service:'',date:'',time:''};
+    booking={step:'name',name:'',phone:'',service:'',date:'',time:'',email:''};
     qa_el.innerHTML='';
     setTimeout(function(){addMsg('assistant','I\\'d love to book an appointment for you!\\nFirst, what\\'s your name?');},350);
   }
@@ -602,7 +711,10 @@ router.get("/widget.js", async (req, res) => {
       booking.date=text;booking.step='time';
       setTimeout(function(){addMsg('assistant','Almost done! Do you prefer morning or afternoon?');showTimeBtns();},350);
     } else if(booking.step==='time'){
-      booking.time=text;booking.step='confirm';
+      booking.time=text;booking.step='email';
+      setTimeout(function(){addMsg('assistant','Last thing — would you like a confirmation email? If yes, enter your email address. Otherwise tap Skip.');showEmailInput();},350);
+    } else if(booking.step==='email'){
+      booking.email=text==='skip'?'':text;booking.step='confirm';
       setTimeout(function(){showSummary();},350);
     }
   }
@@ -661,11 +773,32 @@ router.get("/widget.js", async (req, res) => {
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
+  function showEmailInput(){
+    var c=col();var rgb=hexToRgb(c);
+    var cont=document.createElement('div');cont.className='_cb_wr';cont.style.alignItems='center';
+    var ei=document.createElement('input');ei.type='email';ei.placeholder='your@email.com';
+    ei.style.cssText='border:1.5px solid #e2e8f0;border-radius:10px;padding:8px 12px;font-size:13px;color:#1e293b;outline:none;background:#fff;flex:1;min-width:0';
+    var sb=document.createElement('button');sb.textContent='Skip';
+    sb.style.cssText='background:#f1f5f9;color:#64748b;border:none;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0';
+    var pb=document.createElement('button');pb.textContent='Send';
+    pb.style.cssText='background:'+c+';color:white;border:none;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0';
+    sb.onclick=function(){cont.remove();addMsg('user','Skip');booking.email='';booking.step='confirm';setTimeout(function(){showSummary();},350);};
+    pb.onclick=function(){
+      if(!ei.value||!ei.value.includes('@')){ei.style.borderColor='#ef4444';return;}
+      cont.remove();addMsg('user',ei.value);
+      booking.email=ei.value;booking.step='confirm';setTimeout(function(){showSummary();},350);
+    };
+    cont.appendChild(ei);cont.appendChild(sb);cont.appendChild(pb);
+    msgs_el.appendChild(cont);
+    setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;ei.focus();},30);
+  }
+
   function showSummary(){
     var c=col();
     var d=new Date(booking.date+'T12:00:00');
     var ds=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-    addMsg('assistant','\uD83D\uDCCB **Booking Summary**\\n\\n\uD83D\uDC64 '+booking.name+'\\n\uD83D\uDCDE '+booking.phone+'\\n\u2699\uFE0F '+booking.service+'\\n\uD83D\uDCC5 '+ds+'\\n\uD83D\uDD50 '+booking.time);
+    var emailLine=booking.email?'\\n\uD83D\uDCE7 '+booking.email:'';
+    addMsg('assistant','\uD83D\uDCCB **Booking Summary**\\n\\n\uD83D\uDC64 '+booking.name+'\\n\uD83D\uDCDE '+booking.phone+'\\n\u2699\uFE0F '+booking.service+'\\n\uD83D\uDCC5 '+ds+'\\n\uD83D\uDD50 '+booking.time+emailLine);
     var cont=document.createElement('div');cont.className='_cb_wr';
     var cfm=document.createElement('button');cfm.className='_cb_qbtn';
     cfm.textContent='\u2713 Confirm Booking';
@@ -682,7 +815,7 @@ router.get("/widget.js", async (req, res) => {
   function confirmBooking(){
     apiFetch('/api/widget/'+BOT_ID+'/booking',{
       method:'POST',
-      body:JSON.stringify({sessionId:SESSION_ID,name:booking.name,phone:booking.phone,service:booking.service,date:booking.date,timePreference:booking.time})
+      body:JSON.stringify({sessionId:SESSION_ID,name:booking.name,phone:booking.phone,service:booking.service,date:booking.date,timePreference:booking.time,email:booking.email||undefined})
     }).then(function(){
       var msg=(cfg&&cfg.bookingConfirmationMessage)||'Your appointment is confirmed! We\\'ll be in touch shortly. \uD83C\uDF89';
       addMsg('assistant',msg);booking=null;playSound();

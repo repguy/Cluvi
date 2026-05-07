@@ -3,7 +3,7 @@ import { useLocation, useParams, useSearch } from "wouter";
 import {
   Settings, Bot, Palette, FileText, Code2, ChevronLeft,
   Save, Check, Eye, EyeOff, Copy, ExternalLink, Plus, X,
-  Loader2, CalendarCheck, Volume2, VolumeX, Shield, BarChart2, Globe,
+  Loader2, CalendarCheck, Volume2, VolumeX, Shield, BarChart2, Globe, Bell, ChevronDown, ChevronUp,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -79,18 +79,22 @@ const DEFAULT_APPEARANCE: BotAppearance = {
 };
 
 const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
-  resendApiKey: "",
-  resendFromEmail: "",
   resendEnabled: false,
-  twilioAccountSid: "",
-  twilioAuthToken: "",
-  twilioOwnerPhone: "",
-  twilioFromPhone: "",
+  resendFromEmail: "",
   twilioEnabled: false,
-  zapierEnabled: true,
+  twilioOwnerPhone: "",
+  twilioWhatsappEnabled: false,
+  twilioWhatsappTo: "",
+  twilioWhatsappFrom: "",
+  telegramEnabled: false,
+  telegramBotToken: "",
+  telegramChatId: "",
+  discordEnabled: false,
+  discordWebhookUrl: "",
+  zapierEnabled: false,
 };
 
-type TabId = "general" | "ai" | "appearance" | "prompt" | "booking" | "security" | "stats" | "integration";
+type TabId = "general" | "ai" | "appearance" | "prompt" | "booking" | "notifications" | "security" | "stats" | "integration";
 
 const BASE_TABS: { id: TabId; icon: React.ComponentType<{ className?: string }>; label: string }[] = [
   { id: "general", icon: Settings, label: "General" },
@@ -98,6 +102,7 @@ const BASE_TABS: { id: TabId; icon: React.ComponentType<{ className?: string }>;
   { id: "appearance", icon: Palette, label: "Appearance" },
   { id: "prompt", icon: FileText, label: "System Prompt" },
   { id: "booking", icon: CalendarCheck, label: "Booking" },
+  { id: "notifications", icon: Bell, label: "Notifications" },
   { id: "security", icon: Shield, label: "Security" },
   { id: "stats", icon: BarChart2, label: "Stats" },
   { id: "integration", icon: Code2, label: "Integration" },
@@ -158,6 +163,67 @@ function Section({ title, helper, children }: { title: string; helper?: string; 
   );
 }
 
+function NotifCard({
+  icon, title, description, enabled, onToggle, hint, hintKey, expandedHints, setExpandedHints, steps, children,
+}: {
+  icon: string; title: string; description: string; enabled: boolean;
+  onToggle: (v: boolean) => void; hint: string | null; hintKey: string;
+  expandedHints: Record<string, boolean>; setExpandedHints: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  steps?: string[]; children?: React.ReactNode;
+}) {
+  const isExpanded = expandedHints[hintKey] ?? false;
+  const toggleHint = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedHints((prev) => ({ ...prev, [hintKey]: !prev[hintKey] }));
+  };
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <span className="text-xl flex-shrink-0">{icon}</span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-900">{title}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{description}</p>
+          </div>
+        </div>
+        <Toggle enabled={enabled} onChange={onToggle} />
+      </div>
+      {enabled && (
+        <div className="mt-4 space-y-3">
+          {children}
+          {(hint || steps) && (
+            <div className="border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={toggleHint}
+                className="flex items-center gap-1.5 text-xs text-indigo-500 hover:text-indigo-700 font-medium transition-colors"
+              >
+                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                {isExpanded ? "Hide setup instructions" : "How does this work?"}
+              </button>
+              {isExpanded && (
+                <div className="mt-3 bg-slate-50 rounded-lg p-3 text-xs text-slate-600 border border-slate-100">
+                  {hint && <p>{hint}</p>}
+                  {steps && (
+                    <ol className="space-y-1.5 mt-1">
+                      {steps.map((s, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+                          <span>{s}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -176,9 +242,8 @@ export default function BotEditor() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!isNew);
   const [showKey, setShowKey] = useState(false);
-  const [showResendKey, setShowResendKey] = useState(false);
-  const [showTwilioToken, setShowTwilioToken] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [expandedHints, setExpandedHints] = useState<Record<string, boolean>>({});
   const [customModel, setCustomModel] = useState("");
   const [qaInput, setQaInput] = useState("");
   const [serviceInput, setServiceInput] = useState("");
@@ -717,81 +782,139 @@ export default function BotEditor() {
                   </div>
                 </Section>
 
-                <Section title="Email Notifications (Resend)" helper="Send a confirmation email to the owner when a booking is submitted.">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-700">Enable Resend email</p>
-                      <p className="text-xs text-slate-400">Requires a Resend API key</p>
-                    </div>
-                    <Toggle enabled={notifications.resendEnabled} onChange={(v) => updateNotifications("resendEnabled", v)} />
-                  </div>
-                  {notifications.resendEnabled && (
-                    <>
-                      <Field label="Resend API Key">
-                        <div className="relative">
-                          <Input type={showResendKey ? "text" : "password"} value={notifications.resendApiKey} onChange={(e) => updateNotifications("resendApiKey", e.target.value)} placeholder="re_..." autoComplete="off" className="pr-10" />
-                          <button type="button" onClick={() => setShowResendKey(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                            {showResendKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                        <a href="https://resend.com/api-keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:underline mt-1">Get key from resend.com <ExternalLink className="w-3 h-3" /></a>
-                      </Field>
-                      <Field label="From Email" helper="Must be a verified sender in Resend.">
-                        <Input type="email" value={notifications.resendFromEmail} onChange={(e) => updateNotifications("resendFromEmail", e.target.value)} placeholder="bookings@yourdomain.com" />
-                      </Field>
-                    </>
-                  )}
-                </Section>
+              </>
+            )}
 
-                <Section title="SMS Notifications (Twilio)" helper="Send an SMS to the owner's phone when a booking is submitted.">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-700">Enable Twilio SMS</p>
-                      <p className="text-xs text-slate-400">Requires a Twilio account</p>
-                    </div>
-                    <Toggle enabled={notifications.twilioEnabled} onChange={(v) => updateNotifications("twilioEnabled", v)} />
-                  </div>
-                  {notifications.twilioEnabled && (
-                    <>
-                      <div className="grid grid-cols-2 gap-4">
-                        <Field label="Account SID">
-                          <Input value={notifications.twilioAccountSid} onChange={(e) => updateNotifications("twilioAccountSid", e.target.value)} placeholder="ACxxxx..." autoComplete="off" />
-                        </Field>
-                        <Field label="Auth Token">
-                          <div className="relative">
-                            <Input type={showTwilioToken ? "text" : "password"} value={notifications.twilioAuthToken} onChange={(e) => updateNotifications("twilioAuthToken", e.target.value)} placeholder="••••••" autoComplete="off" className="pr-10" />
-                            <button type="button" onClick={() => setShowTwilioToken(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                              {showTwilioToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                          </div>
-                        </Field>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <Field label="Owner Phone (To)">
-                          <Input value={notifications.twilioOwnerPhone} onChange={(e) => updateNotifications("twilioOwnerPhone", e.target.value)} placeholder="+15550001234" />
-                        </Field>
-                        <Field label="Twilio Phone (From)">
-                          <Input value={notifications.twilioFromPhone} onChange={(e) => updateNotifications("twilioFromPhone", e.target.value)} placeholder="+15559876543" />
-                        </Field>
-                      </div>
-                    </>
-                  )}
-                </Section>
+            {/* ── NOTIFICATIONS ── */}
+            {activeTab === "notifications" && (
+              <>
+                <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800 mb-1">
+                  <Bell className="w-4 h-4 flex-shrink-0 mt-0.5 text-blue-500" />
+                  <div>Get notified the moment a new booking comes in. Enable any combination of channels below.</div>
+                </div>
 
-                <Section title="Zapier / Webhook" helper="POST booking data to any URL (Zapier, Make, n8n, etc.)">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <p className="text-sm font-medium text-slate-700">Enable webhook</p>
-                      <p className="text-xs text-slate-400">Send booking data to a webhook URL</p>
-                    </div>
-                    <Toggle enabled={notifications.zapierEnabled !== false} onChange={(v) => updateNotifications("zapierEnabled", v)} />
-                  </div>
-                  {notifications.zapierEnabled !== false && (
-                    <Field label="Webhook URL">
-                      <Input value={bot.leadWebhookUrl ?? ""} onChange={(e) => update("leadWebhookUrl", e.target.value)} placeholder="https://hooks.zapier.com/..." />
+                {/* Email */}
+                <NotifCard
+                  icon="📧" title="Email Notification" description="Get an email when a booking comes in"
+                  enabled={notifications.resendEnabled} onToggle={(v) => updateNotifications("resendEnabled", v)}
+                  hint="Just enter the business owner's email in the Booking tab → Owner Contact. No Resend account needed — Cluvi handles all email delivery."
+                  hintKey="email" expandedHints={expandedHints} setExpandedHints={setExpandedHints}
+                >
+                  <p className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 border border-slate-100">
+                    Owner email is set in the <strong>Booking</strong> tab → Owner Contact section.
+                    Cluvi sends all emails using its own Resend account — no setup required.
+                  </p>
+                </NotifCard>
+
+                {/* SMS */}
+                <NotifCard
+                  icon="📱" title="SMS Notification" description="Get a text message when a booking comes in"
+                  enabled={notifications.twilioEnabled} onToggle={(v) => updateNotifications("twilioEnabled", v)}
+                  hint="Just enter the business owner's phone number. Cluvi sends the SMS using its own Twilio account — no Twilio account needed."
+                  hintKey="sms" expandedHints={expandedHints} setExpandedHints={setExpandedHints}
+                >
+                  <Field label="Owner Phone Number">
+                    <Input
+                      value={notifications.twilioOwnerPhone}
+                      onChange={(e) => updateNotifications("twilioOwnerPhone", e.target.value)}
+                      placeholder="+15551234567"
+                    />
+                  </Field>
+                </NotifCard>
+
+                {/* WhatsApp */}
+                <NotifCard
+                  icon="💬" title="WhatsApp Notification" description="Get a WhatsApp message when a booking comes in"
+                  enabled={notifications.twilioWhatsappEnabled} onToggle={(v) => updateNotifications("twilioWhatsappEnabled", v)}
+                  hint="Enter the owner's WhatsApp number (with country code). Cluvi uses the Twilio WhatsApp sandbox — the owner must message the sandbox number once to opt in."
+                  hintKey="whatsapp" expandedHints={expandedHints} setExpandedHints={setExpandedHints}
+                >
+                  <Field label="Owner WhatsApp Number" helper="Include country code — e.g. +15551234567">
+                    <Input
+                      value={notifications.twilioWhatsappTo}
+                      onChange={(e) => updateNotifications("twilioWhatsappTo", e.target.value)}
+                      placeholder="+15551234567"
+                    />
+                  </Field>
+                </NotifCard>
+
+                {/* Telegram */}
+                <NotifCard
+                  icon="✈️" title="Telegram Notification" description="Get a Telegram message when a booking comes in"
+                  enabled={notifications.telegramEnabled} onToggle={(v) => updateNotifications("telegramEnabled", v)}
+                  hint={null}
+                  hintKey="telegram" expandedHints={expandedHints} setExpandedHints={setExpandedHints}
+                  steps={[
+                    "Open Telegram → search @BotFather → send /newbot",
+                    "Follow the steps and copy the bot token it gives you",
+                    "Open your new bot → send it any message",
+                    "Visit: api.telegram.org/bot{YOUR_TOKEN}/getUpdates",
+                    'Find "chat":{"id": 123456} — that number is your Chat ID',
+                    "Paste both values below and you're done!",
+                  ]}
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Bot Token">
+                      <Input
+                        value={notifications.telegramBotToken}
+                        onChange={(e) => updateNotifications("telegramBotToken", e.target.value)}
+                        placeholder="123456:ABCdef..."
+                        autoComplete="off"
+                      />
                     </Field>
-                  )}
-                </Section>
+                    <Field label="Chat ID">
+                      <Input
+                        value={notifications.telegramChatId}
+                        onChange={(e) => updateNotifications("telegramChatId", e.target.value)}
+                        placeholder="123456789"
+                      />
+                    </Field>
+                  </div>
+                </NotifCard>
+
+                {/* Discord */}
+                <NotifCard
+                  icon="🎮" title="Discord Notification" description="Post a message to your Discord server when a booking comes in"
+                  enabled={notifications.discordEnabled} onToggle={(v) => updateNotifications("discordEnabled", v)}
+                  hint={null}
+                  hintKey="discord" expandedHints={expandedHints} setExpandedHints={setExpandedHints}
+                  steps={[
+                    "Open Discord and go to your server",
+                    "Click the gear icon on the channel you want notifications in",
+                    "Go to Integrations → Webhooks → New Webhook",
+                    "Copy the Webhook URL and paste it below",
+                  ]}
+                >
+                  <Field label="Discord Webhook URL">
+                    <Input
+                      value={notifications.discordWebhookUrl}
+                      onChange={(e) => updateNotifications("discordWebhookUrl", e.target.value)}
+                      placeholder="https://discord.com/api/webhooks/..."
+                    />
+                  </Field>
+                </NotifCard>
+
+                {/* Zapier */}
+                <NotifCard
+                  icon="🔗" title="Zapier / Webhook" description="POST booking data to any URL — Zapier, Make, n8n, or custom"
+                  enabled={notifications.zapierEnabled !== false} onToggle={(v) => updateNotifications("zapierEnabled", v)}
+                  hint={null}
+                  hintKey="zapier" expandedHints={expandedHints} setExpandedHints={setExpandedHints}
+                  steps={[
+                    "In Zapier, create a new Zap with a Webhook trigger",
+                    "Choose 'Catch Hook' and copy the webhook URL",
+                    "Paste the URL below — bookings will be sent as JSON",
+                    "Map the fields: name, phone, service, date, timePreference",
+                  ]}
+                >
+                  <Field label="Webhook URL">
+                    <Input
+                      value={bot.leadWebhookUrl ?? ""}
+                      onChange={(e) => update("leadWebhookUrl", e.target.value)}
+                      placeholder="https://hooks.zapier.com/..."
+                    />
+                  </Field>
+                </NotifCard>
               </>
             )}
 

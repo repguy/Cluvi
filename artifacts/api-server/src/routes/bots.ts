@@ -15,6 +15,32 @@ router.get("/bots", requireAuth, async (req, res) => {
   }
 });
 
+router.get("/bots/mini-stats", requireAuth, async (req, res) => {
+  try {
+    const bots = await db.select({ id: botsTable.id }).from(botsTable).where(eq(botsTable.userId, req.session.userId!));
+    const botIds = bots.map((b) => b.id);
+    if (botIds.length === 0) { res.json({}); return; }
+    const botIdsSql = sql`${conversationsTable.botId} = ANY(ARRAY[${sql.join(botIds.map((id) => sql`${id}::uuid`), sql`, `)}])`;
+    const botIdsSqlB = sql`${bookingsTable.botId} = ANY(ARRAY[${sql.join(botIds.map((id) => sql`${id}::uuid`), sql`, `)}])`;
+    const convCounts = await db
+      .select({ botId: conversationsTable.botId, count: sql<number>`count(*)::int`, lastActive: sql<string>`max(${conversationsTable.createdAt})::text` })
+      .from(conversationsTable).where(botIdsSql)
+      .groupBy(conversationsTable.botId);
+    const bookingCounts = await db
+      .select({ botId: bookingsTable.botId, count: sql<number>`count(*)::int` })
+      .from(bookingsTable).where(botIdsSqlB)
+      .groupBy(bookingsTable.botId);
+    const result: Record<string, { conversations: number; bookings: number; lastActive: string | null }> = {};
+    for (const id of botIds) result[id] = { conversations: 0, bookings: 0, lastActive: null };
+    for (const r of convCounts) result[r.botId] = { ...result[r.botId], conversations: r.count, lastActive: r.lastActive };
+    for (const r of bookingCounts) if (result[r.botId]) result[r.botId].bookings = r.count;
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "mini stats error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 router.post("/bots", requireAuth, async (req, res) => {
   try {
     const { name, description, provider, model, apiKey, systemPrompt, appearance, isActive, leadWebhookUrl, notificationsConfig, allowedDomains } = req.body;

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { CalendarCheck, Download, Loader2, RefreshCw } from "lucide-react";
-import { api, Booking } from "../lib/api";
+import { useState, useEffect, useMemo } from "react";
+import { CalendarCheck, Download, Loader2, RefreshCw, Search, Filter } from "lucide-react";
+import { api, Booking, Bot } from "../lib/api";
 import Layout from "../components/Layout";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -9,17 +9,28 @@ const STATUS_STYLES: Record<string, string> = {
   cancelled: "bg-red-50 text-red-600 border border-red-200",
 };
 
+const STATUS_BADGE: Record<string, string> = {
+  pending: "bg-amber-100 text-amber-700",
+  confirmed: "bg-emerald-100 text-emerald-700",
+  cancelled: "bg-red-100 text-red-600",
+};
+
 export default function Bookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bots, setBots] = useState<Bot[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [botFilter, setBotFilter] = useState("all");
 
   async function load() {
     setLoading(true);
     try {
-      const data = await api.bookings.list();
+      const [data, botData] = await Promise.all([api.bookings.list(), api.bots.list()]);
       setBookings(data ?? []);
+      setBots(botData ?? []);
     } finally {
       setLoading(false);
     }
@@ -56,6 +67,18 @@ export default function Bookings() {
     }
   }
 
+  const filtered = useMemo(() => {
+    return bookings.filter((b) => {
+      const matchSearch =
+        !search ||
+        b.name?.toLowerCase().includes(search.toLowerCase()) ||
+        b.phone?.toLowerCase().includes(search.toLowerCase());
+      const matchStatus = statusFilter === "all" || b.status === statusFilter;
+      const matchBot = botFilter === "all" || b.botId === botFilter;
+      return matchSearch && matchStatus && matchBot;
+    });
+  }, [bookings, search, statusFilter, botFilter]);
+
   const counts = {
     pending: bookings.filter((b) => b.status === "pending").length,
     confirmed: bookings.filter((b) => b.status === "confirmed").length,
@@ -91,7 +114,7 @@ export default function Bookings() {
 
       <div className="flex-1 p-6 overflow-auto">
         {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-3 gap-4 mb-5">
           {[
             { label: "Pending", count: counts.pending, color: "text-amber-600", bg: "bg-amber-50 border-amber-100" },
             { label: "Confirmed", count: counts.confirmed, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-100" },
@@ -102,6 +125,46 @@ export default function Bookings() {
               <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
             </div>
           ))}
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="relative flex-1 min-w-[180px] max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or phone…"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Filter className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700"
+            >
+              <option value="all">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <select
+              value={botFilter}
+              onChange={(e) => setBotFilter(e.target.value)}
+              className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700"
+            >
+              <option value="all">All Bots</option>
+              {bots.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+          <span className="text-xs text-slate-400 ml-auto">
+            Showing {filtered.length} booking{filtered.length !== 1 ? "s" : ""}
+          </span>
         </div>
 
         {loading ? (
@@ -116,6 +179,12 @@ export default function Bookings() {
               Bookings will appear here when visitors use the booking flow in your widget.
             </p>
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <Search className="w-8 h-8 text-slate-200 mb-3" />
+            <p className="text-slate-500 font-medium">No results found</p>
+            <p className="text-slate-400 text-sm mt-1">Try adjusting your search or filters.</p>
+          </div>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
             <table className="w-full text-sm">
@@ -129,7 +198,7 @@ export default function Bookings() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {bookings.map((b) => (
+                {filtered.map((b) => (
                   <tr key={b.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-4 py-3 font-medium text-slate-900">{b.name || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{b.phone || "—"}</td>
@@ -146,15 +215,20 @@ export default function Bookings() {
                       {updatingId === b.id ? (
                         <Loader2 className="w-4 h-4 animate-spin text-slate-300" />
                       ) : (
-                        <select
-                          value={b.status}
-                          onChange={(e) => handleStatusChange(b.id, e.target.value)}
-                          className={`text-xs font-medium px-2.5 py-1 rounded-full border-0 outline-none cursor-pointer ${STATUS_STYLES[b.status] ?? STATUS_STYLES.pending}`}
-                        >
-                          <option value="pending">Pending</option>
-                          <option value="confirmed">Confirmed</option>
-                          <option value="cancelled">Cancelled</option>
-                        </select>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[b.status] ?? STATUS_BADGE.pending}`}>
+                            {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
+                          </span>
+                          <select
+                            value={b.status}
+                            onChange={(e) => handleStatusChange(b.id, e.target.value)}
+                            className={`text-xs font-medium px-2.5 py-1 rounded-full border-0 outline-none cursor-pointer ${STATUS_STYLES[b.status] ?? STATUS_STYLES.pending}`}
+                          >
+                            <option value="pending">Pending</option>
+                            <option value="confirmed">Confirmed</option>
+                            <option value="cancelled">Cancelled</option>
+                          </select>
+                        </div>
                       )}
                     </td>
                   </tr>

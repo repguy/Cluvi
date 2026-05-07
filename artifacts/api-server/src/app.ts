@@ -145,6 +145,10 @@ app.use(
   })
 );
 
+// ── Notification service availability check ────────────────────────────────
+console.log("📧 Email notifications:", process.env.RESEND_API_KEY ? "✅ Ready" : "❌ No API key");
+console.log("📱 SMS/WhatsApp:", process.env.TWILIO_ACCOUNT_SID ? "✅ Ready" : "❌ No credentials");
+
 // ── Routes ─────────────────────────────────────────────────────────────────
 app.use("/api", router);
 
