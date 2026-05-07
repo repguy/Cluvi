@@ -224,6 +224,73 @@ function NotifCard({
   );
 }
 
+function ReportLinkSection({ botId }: { botId: string }) {
+  const [reportUrl, setReportUrl] = useState<string | null>(null);
+  const [copying, setCopying] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function generate() {
+    setLoading(true);
+    try {
+      const data = await api.reports.getToken(botId);
+      if (data?.token) setReportUrl(`${window.location.origin}/report/${botId}/${data.token}`);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function copyUrl() {
+    if (!reportUrl) return;
+    await navigator.clipboard.writeText(reportUrl);
+    setCopying(true);
+    setTimeout(() => setCopying(false), 2000);
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+      <div>
+        <p className="text-sm font-semibold text-slate-900">Client Report Link</p>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Generate a shareable, read-only report showing this bot's stats and bookings. No login required.
+        </p>
+      </div>
+      {reportUrl ? (
+        <div className="flex items-center gap-2">
+          <code className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-xs font-mono text-slate-600 truncate">
+            {reportUrl}
+          </code>
+          <button
+            onClick={copyUrl}
+            className="flex items-center gap-1.5 px-3 py-2.5 border border-slate-200 rounded-lg text-xs text-slate-500 hover:bg-slate-50 transition-colors flex-shrink-0"
+          >
+            {copying ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+            {copying ? "Copied!" : "Copy"}
+          </button>
+          <a
+            href={reportUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 px-3 py-2.5 border border-slate-200 rounded-lg text-xs text-slate-500 hover:bg-slate-50 transition-colors flex-shrink-0"
+          >
+            <ExternalLink className="w-3.5 h-3.5" /> Open
+          </a>
+        </div>
+      ) : (
+        <button
+          onClick={generate}
+          disabled={loading}
+          className="flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+        >
+          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
+          Generate Report Link
+        </button>
+      )}
+    </div>
+  );
+}
+
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -648,6 +715,13 @@ export default function BotEditor() {
                       <span className="text-xs text-slate-400">seconds delay (0 = off)</span>
                     </div>
                   </Field>
+                  <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-1">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Lead Capture Form</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Ask visitors for their name &amp; email before chatting. They can skip. Leads appear in your Leads inbox.</p>
+                    </div>
+                    <Toggle enabled={appearance.leadCaptureEnabled ?? false} onChange={(v) => updateAppearance("leadCaptureEnabled", v)} />
+                  </div>
                 </Section>
 
                 <Section title="Messages">
@@ -1077,6 +1151,8 @@ export default function BotEditor() {
                         </a>
                       </div>
                     </Section>
+
+                    <ReportLinkSection botId={bot.id!} />
 
                     <Section title="Bot ID (Public)" helper="Share this with developers who need to reference the bot directly.">
                       <div className="flex items-center gap-2">

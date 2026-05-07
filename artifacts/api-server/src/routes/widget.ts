@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, botsTable, conversationsTable, bookingsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, botsTable, conversationsTable, bookingsTable, leadsTable } from "@workspace/db";
+import { eq, and, gte } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { getSettingsForUser } from "./admin";
 
@@ -120,6 +120,7 @@ router.get("/widget/:publicId/config", async (req, res) => {
       brandingText: bot.appearance.brandingText || "",
       brandingUrl: bot.appearance.brandingUrl || "",
       proactiveGreetingDelay: bot.appearance.proactiveGreetingDelay ?? 0,
+      leadCaptureEnabled: bot.appearance.leadCaptureEnabled ?? false,
     });
   } catch { res.status(500).json({ message: "Internal server error" }); }
 });
@@ -178,6 +179,20 @@ router.post("/widget/:publicId/chat", async (req, res) => {
   }
 });
 
+// ── Widget lead capture ────────────────────────────────────────────────────
+router.post("/widget/:publicId/lead", async (req, res) => {
+  try {
+    const [bot] = await db.select({ id: botsTable.id }).from(botsTable).where(eq(botsTable.publicId, req.params.publicId)).limit(1);
+    if (!bot) { res.status(404).json({ message: "Bot not found" }); return; }
+    const { sessionId, name, email, skipped } = req.body as { sessionId?: string; name?: string; email?: string; skipped?: boolean };
+    await db.insert(leadsTable).values({ botId: bot.id, sessionId: sessionId ?? "", name: name ?? "", email: email ?? "", skipped: !!skipped }).catch(() => {});
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "lead capture error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 // ── Widget booking ─────────────────────────────────────────────────────────
 router.post("/widget/:publicId/booking", async (req, res) => {
   try {
@@ -198,6 +213,24 @@ router.post("/widget/:publicId/booking", async (req, res) => {
     }
 
     const { sessionId, name, phone, service, date, timePreference, email: customerEmail } = req.body as { sessionId?: string; name: string; phone: string; service: string; date: string; timePreference: string; email?: string };
+
+    // ── Anti-troll: phone validation ────────────────────────────────────────
+    const digits = (phone ?? "").replace(/\D/g, "");
+    if (digits.length < 7) {
+      res.status(400).json({ message: "Please provide a valid phone number (at least 7 digits)." }); return;
+    }
+
+    // ── Anti-troll: duplicate booking check (same phone + same bot, last 24h) ─
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [dupe] = await db
+      .select({ id: bookingsTable.id })
+      .from(bookingsTable)
+      .where(and(eq(bookingsTable.botId, bot.id), eq(bookingsTable.phone, phone), gte(bookingsTable.createdAt, oneDayAgo)))
+      .limit(1);
+    if (dupe) {
+      res.status(409).json({ message: "A booking with this phone number already exists for today. Please contact us directly if you need any changes." }); return;
+    }
+
     const [booking] = await db.insert(bookingsTable).values({ botId: bot.id, sessionId: sessionId ?? "", name, phone, service, date, timePreference }).returning();
 
     const nc = bot.notificationsConfig;
@@ -403,6 +436,15 @@ router.get("/widget.js", async (req, res) => {
 ._cb_ts{font-size:10px;color:#94a3b8;margin-top:3px;padding:0 4px}
 ._cb_msg._u ._cb_ts{text-align:right}
 ._cb_section_lbl{text-align:center;font-size:10px;color:#94a3b8;letter-spacing:0.05em;text-transform:uppercase;font-weight:600;padding:4px 0 2px}
+#_cb_lead{position:absolute;inset:0;background:#fff;z-index:20;display:flex;flex-direction:column;padding:24px 22px;gap:12px;overflow-y:auto}
+._cb_lead_hd{font-size:15px;font-weight:700;color:#0f172a;line-height:1.3}
+._cb_lead_sub{font-size:12.5px;color:#64748b;line-height:1.5;margin-top:-4px}
+._cb_lead_inp{width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:10px 13px;font-size:13px;color:#1e293b;outline:none;transition:border-color 0.15s;box-sizing:border-box;font-family:inherit}
+._cb_lead_inp:focus{border-color:var(--cb-col,#6366f1);box-shadow:0 0 0 3px rgba(99,102,241,0.08)}
+._cb_lead_btn{width:100%;padding:11px;border-radius:11px;border:none;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:opacity 0.15s;font-family:inherit;margin-top:2px}
+._cb_lead_btn:hover{opacity:0.88}
+._cb_lead_skip{text-align:center;font-size:11.5px;color:#94a3b8;cursor:pointer;padding:2px;transition:color 0.15s}
+._cb_lead_skip:hover{color:#64748b}
 `.replace(/\n/g, "");
 
   const js = `
@@ -528,6 +570,31 @@ router.get("/widget.js", async (req, res) => {
     },delay);
   }
 
+  function showLeadForm(){
+    if(document.getElementById('_cb_lead'))return;
+    var d=document.createElement('div');d.id='_cb_lead';
+    d.innerHTML=
+      '<div class="_cb_lead_hd">👋 Welcome! Quick intro</div>'
+      +'<div class="_cb_lead_sub">Tell us who you are before we start — it helps us serve you better. No pressure, you can skip.</div>'
+      +'<input class="_cb_lead_inp" id="_cb_ln" type="text" placeholder="Your name" autocomplete="name"/>'
+      +'<input class="_cb_lead_inp" id="_cb_le" type="email" placeholder="Your email (optional)" autocomplete="email"/>'
+      +'<button class="_cb_lead_btn" id="_cb_lgo">Start chatting →</button>'
+      +'<div class="_cb_lead_skip" id="_cb_lsk">Skip</div>';
+    msgs_el.style.position='relative';
+    msgs_el.appendChild(d);
+    var lgo=document.getElementById('_cb_lgo');
+    lgo.style.backgroundColor=col();
+    function done(skipped){
+      var n=document.getElementById('_cb_ln');var e=document.getElementById('_cb_le');
+      var nv=(n?n.value.trim():'');var ev=(e?e.value.trim():'');
+      d.remove();
+      apiFetch('/api/widget/'+BOT_ID+'/lead',{method:'POST',body:JSON.stringify({sessionId:SESSION_ID,name:nv,email:ev,skipped:!!skipped})}).catch(function(){});
+    }
+    lgo.onclick=function(){done(false);};
+    document.getElementById('_cb_lsk').onclick=function(){done(true);};
+    var ni=document.getElementById('_cb_ln');if(ni)ni.focus();
+  }
+
   function initConfig(){
     apiFetch('/api/widget/'+BOT_ID+'/config').then(function(c){
       if(c.message){return;}
@@ -538,6 +605,7 @@ router.get("/widget.js", async (req, res) => {
       hidePh();
       addMsg('assistant',cfg.welcomeMessage||'Hi! How can I help you today?');
       if(cfg.quickActions&&cfg.quickActions.length)renderQA(cfg.quickActions);
+      if(cfg.leadCaptureEnabled)showLeadForm();
       scheduleProactive();
     }).catch(function(){
       head.innerHTML='<div style="color:white;font-weight:600;padding:4px">Chat Assistant</div>';

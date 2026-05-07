@@ -7,6 +7,8 @@ import analyticsRouter from "./analytics";
 import bookingsRouter from "./bookings";
 import conversationsRouter from "./conversations";
 import adminRouter from "./admin";
+import leadsRouter from "./leads";
+import reportsRouter from "./reports";
 
 const router: IRouter = Router();
 
@@ -18,5 +20,7 @@ router.use(analyticsRouter);
 router.use(bookingsRouter);
 router.use(conversationsRouter);
 router.use(adminRouter);
+router.use(leadsRouter);
+router.use(reportsRouter);
 
 export default router;

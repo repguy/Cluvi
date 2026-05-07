@@ -29,6 +29,8 @@ export interface BotAppearance {
   phone: string; email: string; address: string; ownerEmail: string; ownerPhone: string;
   services: string[]; bookingConfirmationMessage: string; officeHours: string;
   afterHoursMessage: string; soundEnabled: boolean;
+  showBranding?: boolean; brandingText?: string; brandingUrl?: string;
+  proactiveGreetingDelay?: number; leadCaptureEnabled?: boolean;
 }
 
 export interface NotificationsConfig {
@@ -100,6 +102,11 @@ export interface Booking {
   timePreference: string; status: string; createdAt: string;
 }
 
+export interface Lead {
+  id: string; botId: string; botName: string; botColor: string;
+  sessionId: string; name: string; email: string; skipped: boolean; createdAt: string;
+}
+
 export const api = {
   auth: {
     register: (data: { username: string; email: string; password: string }) =>
@@ -132,6 +139,12 @@ export const api = {
     updateStatus: (id: string, status: string) =>
       req<Booking>(`/bookings/${id}`, { method: "PUT", body: JSON.stringify({ status }) }),
     export: () => req<string>("/bookings/export"),
+  },
+  leads: {
+    list: () => req<Lead[]>("/leads"),
+  },
+  reports: {
+    getToken: (botId: string) => req<{ token: string }>(`/bots/${botId}/report-token`),
   },
   admin: {
     getSettings: () => req<AdminSettings>("/admin/settings", {}, [401, 403]),

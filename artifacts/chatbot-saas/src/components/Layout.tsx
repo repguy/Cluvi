@@ -10,6 +10,7 @@ import {
   CalendarCheck,
   MessageSquare,
   Settings,
+  Users,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/analytics", icon: BarChart3, label: "Analytics" },
   { href: "/bookings", icon: CalendarCheck, label: "Bookings" },
   { href: "/conversations", icon: MessageSquare, label: "Conversations" },
+  { href: "/leads", icon: Users, label: "Leads" },
 ];
 
 export default function Layout({ children }: LayoutProps) {

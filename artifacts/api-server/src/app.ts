@@ -116,6 +116,16 @@ await pool
     );
     CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
 
+    CREATE TABLE IF NOT EXISTS leads (
+      id          UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
+      bot_id      UUID      NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+      session_id  TEXT      NOT NULL DEFAULT '',
+      name        TEXT      NOT NULL DEFAULT '',
+      email       TEXT      NOT NULL DEFAULT '',
+      skipped     BOOLEAN   NOT NULL DEFAULT false,
+      created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
     -- Additive column migrations (safe on existing installs)
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS messages JSONB NOT NULL DEFAULT '[]'::jsonb;
     ALTER TABLE bots ADD COLUMN IF NOT EXISTS allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb;

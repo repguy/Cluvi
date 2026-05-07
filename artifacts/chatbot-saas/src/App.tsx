@@ -7,6 +7,8 @@ import BotEditor from "./pages/BotEditor";
 import Analytics from "./pages/Analytics";
 import Bookings from "./pages/Bookings";
 import Conversations from "./pages/Conversations";
+import Leads from "./pages/Leads";
+import ClientReport from "./pages/ClientReport";
 import Preview from "./pages/Preview";
 import Settings from "./pages/Settings";
 import SharePage from "./pages/SharePage";
@@ -50,7 +52,9 @@ function Router() {
       <Route path="/analytics" component={() => <ProtectedRoute component={Analytics} />} />
       <Route path="/bookings" component={() => <ProtectedRoute component={Bookings} />} />
       <Route path="/conversations" component={() => <ProtectedRoute component={Conversations} />} />
+      <Route path="/leads" component={() => <ProtectedRoute component={Leads} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
+      <Route path="/report/:botId/:token" component={ClientReport} />
       <Route path="/bots/:id" component={() => <ProtectedRoute component={BotEditor} />} />
       <Route path="/preview" component={Preview} />
       <Route path="/p/:publicId" component={SharePage} />
