@@ -2,17 +2,19 @@ import { useState, useEffect } from "react";
 import {
   Shield, Zap, LayoutTemplate, Lock, Plus, Trash2, X, Check,
   Loader2, Save, Globe, AlertTriangle, Eye, EyeOff, ChevronDown, ChevronUp,
+  Users, Pencil, UserPlus,
 } from "lucide-react";
-import { api, AdminSettings, CustomTemplate } from "../lib/api";
+import { api, AdminSettings, CustomTemplate, AccountUser } from "../lib/api";
 import Layout from "../components/Layout";
 
-type TabId = "security" | "ratelimit" | "templates" | "account";
+type TabId = "security" | "ratelimit" | "templates" | "account" | "accounts";
 
 const TABS: { id: TabId; icon: React.ComponentType<{ className?: string }>; label: string }[] = [
   { id: "security", icon: Shield, label: "Security" },
   { id: "ratelimit", icon: Zap, label: "Rate Limiting" },
   { id: "templates", icon: LayoutTemplate, label: "Templates" },
-  { id: "account", icon: Lock, label: "Account" },
+  { id: "account", icon: Lock, label: "My Account" },
+  { id: "accounts", icon: Users, label: "Accounts" },
 ];
 
 const ICONS = ["🤖", "💼", "🏥", "⚖️", "🍽️", "🦷", "🏠", "💇", "💪", "🛍️", "📚", "🎓", "🏋️", "✈️", "🎉", "💰", "🔧", "🌿"];
@@ -241,6 +243,16 @@ export default function Settings() {
   const [pwSaved, setPwSaved] = useState(false);
   const [pwError, setPwError] = useState("");
 
+  // Accounts management state
+  const [accounts, setAccounts] = useState<AccountUser[]>([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [showNewAccount, setShowNewAccount] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<AccountUser | null>(null);
+  const [acctForm, setAcctForm] = useState({ username: "", email: "", password: "" });
+  const [acctSaving, setAcctSaving] = useState(false);
+  const [acctError, setAcctError] = useState("");
+
   useEffect(() => {
     Promise.all([api.admin.getSettings(), api.admin.getTemplates()])
       .then(([s, t]) => {
@@ -257,6 +269,78 @@ export default function Settings() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "accounts" && !accountsLoaded) {
+      setAccountsLoading(true);
+      api.admin.listAccounts()
+        .then((list) => { if (list) setAccounts(list); setAccountsLoaded(true); })
+        .catch(() => {})
+        .finally(() => setAccountsLoading(false));
+    }
+  }, [activeTab, accountsLoaded]);
+
+  function openNewAccount() {
+    setAcctForm({ username: "", email: "", password: "" });
+    setAcctError("");
+    setEditingAccount(null);
+    setShowNewAccount(true);
+  }
+
+  function openEditAccount(account: AccountUser) {
+    setAcctForm({ username: account.username, email: account.email, password: "" });
+    setAcctError("");
+    setEditingAccount(account);
+    setShowNewAccount(false);
+  }
+
+  async function handleSaveAccount() {
+    setAcctError("");
+    if (!acctForm.username.trim() || !acctForm.email.trim()) {
+      setAcctError("Username and email are required"); return;
+    }
+    if (!editingAccount && !acctForm.password.trim()) {
+      setAcctError("Password is required for new accounts"); return;
+    }
+    if (acctForm.password && acctForm.password.length < 8) {
+      setAcctError("Password must be at least 8 characters"); return;
+    }
+    setAcctSaving(true);
+    try {
+      if (editingAccount) {
+        const updated = await api.admin.updateAccount(editingAccount.id, {
+          username: acctForm.username,
+          email: acctForm.email,
+          ...(acctForm.password ? { password: acctForm.password } : {}),
+        });
+        if (updated) setAccounts((prev) => prev.map((a) => a.id === updated.id ? updated : a));
+      } else {
+        const created = await api.admin.createAccount({
+          username: acctForm.username,
+          email: acctForm.email,
+          password: acctForm.password,
+        });
+        if (created) setAccounts((prev) => [...prev, created]);
+      }
+      setShowNewAccount(false);
+      setEditingAccount(null);
+    } catch (err) {
+      setAcctError(err instanceof Error ? err.message : "Failed to save account");
+    } finally {
+      setAcctSaving(false);
+    }
+  }
+
+  async function handleDeleteAccount(id: string) {
+    if (!confirm("Delete this account? This cannot be undone.")) return;
+    try {
+      await api.admin.deleteAccount(id);
+      setAccounts((prev) => prev.filter((a) => a.id !== id));
+      if (editingAccount?.id === id) setEditingAccount(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not delete account");
+    }
+  }
 
   async function saveSettings() {
     setSaving(true);
@@ -488,6 +572,138 @@ export default function Settings() {
                     ))}
                   </div>
                 )}
+              </>
+            )}
+
+            {/* ── ACCOUNTS MANAGEMENT ── */}
+            {activeTab === "accounts" && (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Dashboard Accounts</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{accounts.length} account{accounts.length !== 1 ? "s" : ""} · all can log in and manage bots</p>
+                  </div>
+                  {!showNewAccount && !editingAccount && (
+                    <button
+                      onClick={openNewAccount}
+                      className="flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" /> New Account
+                    </button>
+                  )}
+                </div>
+
+                {/* ── Create / Edit form ── */}
+                {(showNewAccount || editingAccount) && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      {editingAccount ? `Edit — ${editingAccount.username}` : "New Account"}
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Username *">
+                        <Input
+                          value={acctForm.username}
+                          onChange={(e) => setAcctForm((f) => ({ ...f, username: e.target.value }))}
+                          placeholder="e.g. alice"
+                          autoFocus
+                        />
+                      </Field>
+                      <Field label="Email *">
+                        <Input
+                          type="email"
+                          value={acctForm.email}
+                          onChange={(e) => setAcctForm((f) => ({ ...f, email: e.target.value }))}
+                          placeholder="alice@example.com"
+                        />
+                      </Field>
+                    </div>
+                    <Field label={editingAccount ? "New Password" : "Password *"} helper={editingAccount ? "Leave blank to keep the current password." : "Min. 8 characters."}>
+                      <Input
+                        type="password"
+                        value={acctForm.password}
+                        onChange={(e) => setAcctForm((f) => ({ ...f, password: e.target.value }))}
+                        placeholder={editingAccount ? "Leave blank to keep current" : "Min. 8 characters"}
+                        autoComplete="new-password"
+                        onKeyDown={(e) => e.key === "Enter" && handleSaveAccount()}
+                      />
+                    </Field>
+                    {acctError && (
+                      <div className="flex items-center gap-2 text-red-600 text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> {acctError}
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={handleSaveAccount}
+                        disabled={acctSaving}
+                        className="flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                      >
+                        {acctSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        {acctSaving ? "Saving…" : editingAccount ? "Save Changes" : "Create Account"}
+                      </button>
+                      <button
+                        onClick={() => { setShowNewAccount(false); setEditingAccount(null); setAcctError(""); }}
+                        className="px-4 py-2 border border-slate-200 text-slate-600 text-sm rounded-lg hover:bg-slate-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Account list ── */}
+                {accountsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-5 h-5 text-slate-300 animate-spin" />
+                  </div>
+                ) : accounts.length === 0 ? (
+                  <div className="bg-white rounded-xl border border-dashed border-slate-300 p-10 text-center">
+                    <Users className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                    <p className="text-slate-500 font-medium text-sm">No accounts yet</p>
+                    <p className="text-slate-400 text-xs mt-1">Create accounts for team members who need dashboard access.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {accounts.map((acct) => (
+                      <div
+                        key={acct.id}
+                        className={`bg-white rounded-xl border px-4 py-3 flex items-center gap-3 shadow-sm transition-colors ${editingAccount?.id === acct.id ? "border-indigo-300 ring-1 ring-indigo-200" : "border-slate-200"}`}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-indigo-600 text-sm font-bold">{acct.username.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm text-slate-900">{acct.username}</p>
+                          <p className="text-xs text-slate-400 truncate">{acct.email}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className="text-xs text-slate-300">
+                            {new Date(acct.createdAt).toLocaleDateString()}
+                          </span>
+                          <button
+                            onClick={() => editingAccount?.id === acct.id ? (setEditingAccount(null), setAcctError("")) : openEditAccount(acct)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+                            title="Edit account"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAccount(acct.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete account"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-xs text-amber-800 flex items-start gap-2.5">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-500" />
+                  <span>All accounts have equal access to the dashboard. You cannot delete your own account or the last remaining account.</span>
+                </div>
               </>
             )}
 

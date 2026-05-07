@@ -132,6 +132,22 @@ await pool
     ALTER TABLE bots ADD COLUMN IF NOT EXISTS notifications_config JSONB NOT NULL DEFAULT '{}'::jsonb;
     ALTER TABLE bots ADD COLUMN IF NOT EXISTS lead_webhook_url TEXT NOT NULL DEFAULT '';
   `)
+  .then(async () => {
+    // ── Seed default admin account if no users exist ──────────────────────
+    const { rows } = await pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM users");
+    if (parseInt(rows[0]?.count ?? "1") === 0) {
+      const bcrypt = await import("bcryptjs");
+      const email = process.env.DEFAULT_ADMIN_EMAIL ?? "admin@cluvi.app";
+      const password = process.env.DEFAULT_ADMIN_PASSWORD ?? "changeme123";
+      const hash = await bcrypt.hash(password, 12);
+      await pool.query(
+        "INSERT INTO users (id, username, email, password_hash) VALUES (gen_random_uuid(), $1, $2, $3)",
+        ["admin", email, hash]
+      );
+      logger.info({ email }, "✅ Default admin account created — change this password immediately!");
+      console.log(`\n🔑  Default account: ${email}  /  ${password}\n    ⚠️  Change this password now!\n`);
+    }
+  })
   .catch((err: Error) => logger.warn({ err }, "startup migration warning"));
 
 // ── Session store ──────────────────────────────────────────────────────────

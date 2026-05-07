@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, settingsTable, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, asc, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { requireAuth } from "../middlewares/auth";
 import { randomUUID } from "crypto";
@@ -137,6 +137,98 @@ router.delete("/admin/templates/:id", requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "delete template error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ── GET /api/admin/accounts ───────────────────────────────────────────────
+router.get("/admin/accounts", requireAuth, async (req, res) => {
+  try {
+    const users = await db
+      .select({ id: usersTable.id, username: usersTable.username, email: usersTable.email, createdAt: usersTable.createdAt })
+      .from(usersTable)
+      .orderBy(asc(usersTable.createdAt));
+    res.json(users);
+  } catch (err) {
+    req.log.error({ err }, "list accounts error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ── POST /api/admin/accounts ──────────────────────────────────────────────
+router.post("/admin/accounts", requireAuth, async (req, res) => {
+  try {
+    const { username, email, password } = req.body as { username: string; email: string; password: string };
+    if (!username?.trim() || !email?.trim() || !password?.trim()) {
+      res.status(400).json({ message: "Username, email and password are required" }); return;
+    }
+    if (password.length < 8) {
+      res.status(400).json({ message: "Password must be at least 8 characters" }); return;
+    }
+
+    const existing = await db.select({ id: usersTable.id }).from(usersTable)
+      .where(eq(usersTable.email, email.toLowerCase().trim())).limit(1);
+    if (existing.length > 0) {
+      res.status(409).json({ message: "An account with this email already exists" }); return;
+    }
+
+    const hash = await bcrypt.hash(password, 12);
+    const [user] = await db.insert(usersTable)
+      .values({ username: username.trim(), email: email.toLowerCase().trim(), passwordHash: hash })
+      .returning({ id: usersTable.id, username: usersTable.username, email: usersTable.email, createdAt: usersTable.createdAt });
+    res.status(201).json(user);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("unique") || msg.includes("duplicate")) {
+      res.status(409).json({ message: "Username or email already taken" }); return;
+    }
+    req.log.error({ err }, "create account error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ── PUT /api/admin/accounts/:id ───────────────────────────────────────────
+router.put("/admin/accounts/:id", requireAuth, async (req, res) => {
+  try {
+    const { username, email, password } = req.body as { username?: string; email?: string; password?: string };
+    const updates: Record<string, unknown> = {};
+    if (username?.trim()) updates.username = username.trim();
+    if (email?.trim()) updates.email = email.toLowerCase().trim();
+    if (password?.trim()) {
+      if (password.length < 8) { res.status(400).json({ message: "Password must be at least 8 characters" }); return; }
+      updates.passwordHash = await bcrypt.hash(password, 12);
+    }
+    if (Object.keys(updates).length === 0) { res.status(400).json({ message: "Nothing to update" }); return; }
+
+    const [updated] = await db.update(usersTable).set(updates)
+      .where(eq(usersTable.id, req.params.id))
+      .returning({ id: usersTable.id, username: usersTable.username, email: usersTable.email, createdAt: usersTable.createdAt });
+    if (!updated) { res.status(404).json({ message: "Account not found" }); return; }
+    res.json(updated);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("unique") || msg.includes("duplicate")) {
+      res.status(409).json({ message: "Username or email already taken" }); return;
+    }
+    req.log.error({ err }, "update account error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ── DELETE /api/admin/accounts/:id ────────────────────────────────────────
+router.delete("/admin/accounts/:id", requireAuth, async (req, res) => {
+  try {
+    if (req.params.id === req.session.userId) {
+      res.status(400).json({ message: "You cannot delete your own account." }); return;
+    }
+    const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(usersTable);
+    if ((count ?? 0) <= 1) {
+      res.status(400).json({ message: "Cannot delete the last account." }); return;
+    }
+    await db.delete(usersTable).where(eq(usersTable.id, req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "delete account error");
     res.status(500).json({ message: "Internal server error" });
   }
 });

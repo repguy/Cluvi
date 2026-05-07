@@ -107,6 +107,10 @@ export interface Lead {
   sessionId: string; name: string; email: string; skipped: boolean; createdAt: string;
 }
 
+export interface AccountUser {
+  id: string; username: string; email: string; createdAt: string;
+}
+
 export const api = {
   auth: {
     register: (data: { username: string; email: string; password: string }) =>
@@ -157,5 +161,12 @@ export const api = {
       req<{ ok: boolean }>(`/admin/templates/${id}`, { method: "DELETE" }, [401, 403]),
     changePassword: (data: { currentPassword: string; newPassword: string }) =>
       req<{ ok: boolean }>("/admin/password", { method: "PUT", body: JSON.stringify(data) }, [401, 403]),
+    listAccounts: () => req<AccountUser[]>("/admin/accounts", {}, [401, 403]),
+    createAccount: (data: { username: string; email: string; password: string }) =>
+      req<AccountUser>("/admin/accounts", { method: "POST", body: JSON.stringify(data) }, [401, 403]),
+    updateAccount: (id: string, data: { username?: string; email?: string; password?: string }) =>
+      req<AccountUser>(`/admin/accounts/${id}`, { method: "PUT", body: JSON.stringify(data) }, [401, 403]),
+    deleteAccount: (id: string) =>
+      req<{ ok: boolean }>(`/admin/accounts/${id}`, { method: "DELETE" }, [401, 403]),
   },
 };
