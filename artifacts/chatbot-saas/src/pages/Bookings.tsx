@@ -7,13 +7,20 @@ const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-50 text-amber-700 border border-amber-200",
   confirmed: "bg-emerald-50 text-emerald-700 border border-emerald-200",
   cancelled: "bg-red-50 text-red-600 border border-red-200",
+  after_hours: "bg-indigo-950/10 text-indigo-700 border border-indigo-200",
 };
 
 const STATUS_BADGE: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700",
   confirmed: "bg-emerald-100 text-emerald-700",
   cancelled: "bg-red-100 text-red-600",
+  after_hours: "bg-[#1A1A2E] text-indigo-300",
 };
+
+function statusLabel(status: string) {
+  if (status === "after_hours") return "🌙 After Hours";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
 
 export default function Bookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -83,13 +90,14 @@ export default function Bookings() {
     pending: bookings.filter((b) => b.status === "pending").length,
     confirmed: bookings.filter((b) => b.status === "confirmed").length,
     cancelled: bookings.filter((b) => b.status === "cancelled").length,
+    after_hours: bookings.filter((b) => b.status === "after_hours").length,
   };
 
   return (
     <Layout>
       <header className="bg-white border-b border-slate-200 px-6 h-[60px] flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2.5">
-          <CalendarCheck className="w-5 h-5 text-indigo-500" />
+          <CalendarCheck className="w-5 h-5 text-[#6C63FF]" />
           <h1 className="text-[15px] font-semibold text-slate-900">Bookings</h1>
         </div>
         <div className="flex items-center gap-2">
@@ -104,7 +112,7 @@ export default function Bookings() {
           <button
             onClick={handleExport}
             disabled={exporting || bookings.length === 0}
-            className="flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 bg-[#6C63FF] hover:bg-[#5a52e0] disabled:opacity-50 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
             {exporting ? "Exporting…" : "Export CSV"}
@@ -114,11 +122,12 @@ export default function Bookings() {
 
       <div className="flex-1 p-6 overflow-auto">
         {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-4 mb-5">
+        <div className="grid grid-cols-4 gap-4 mb-5">
           {[
             { label: "Pending", count: counts.pending, color: "text-amber-600", bg: "bg-amber-50 border-amber-100" },
             { label: "Confirmed", count: counts.confirmed, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-100" },
             { label: "Cancelled", count: counts.cancelled, color: "text-red-500", bg: "bg-red-50 border-red-100" },
+            { label: "🌙 After Hours", count: counts.after_hours, color: "text-indigo-700", bg: "bg-[#1A1A2E]/5 border-indigo-100" },
           ].map((s) => (
             <div key={s.label} className={`rounded-xl border p-4 ${s.bg}`}>
               <p className="text-xs font-medium text-slate-500 mb-1">{s.label}</p>
@@ -136,7 +145,7 @@ export default function Bookings() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name or phone…"
-              className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6C63FF]/30 focus:border-[#6C63FF]"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -144,17 +153,18 @@ export default function Bookings() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700"
+              className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#6C63FF]/30 text-slate-700"
             >
               <option value="all">All Statuses</option>
               <option value="pending">Pending</option>
               <option value="confirmed">Confirmed</option>
               <option value="cancelled">Cancelled</option>
+              <option value="after_hours">After Hours</option>
             </select>
             <select
               value={botFilter}
               onChange={(e) => setBotFilter(e.target.value)}
-              className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700"
+              className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#6C63FF]/30 text-slate-700"
             >
               <option value="all">All Bots</option>
               {bots.map((b) => (
@@ -190,7 +200,7 @@ export default function Bookings() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50">
-                  {["Name", "Phone", "Service", "Date", "Time", "Bot", "Received", "Status"].map((h) => (
+                  {["Name", "Phone", "Service / Reason", "Date", "Time", "Bot", "Received", "Status"].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                       {h}
                     </th>
@@ -199,7 +209,7 @@ export default function Bookings() {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filtered.map((b) => (
-                  <tr key={b.id} className="hover:bg-slate-50/50 transition-colors">
+                  <tr key={b.id} className={`hover:bg-slate-50/50 transition-colors ${b.status === "after_hours" ? "bg-indigo-950/[0.02]" : ""}`}>
                     <td className="px-4 py-3 font-medium text-slate-900">{b.name || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{b.phone || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{b.service || "—"}</td>
@@ -217,17 +227,19 @@ export default function Bookings() {
                       ) : (
                         <div className="flex items-center gap-2">
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[b.status] ?? STATUS_BADGE.pending}`}>
-                            {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
+                            {statusLabel(b.status)}
                           </span>
-                          <select
-                            value={b.status}
-                            onChange={(e) => handleStatusChange(b.id, e.target.value)}
-                            className={`text-xs font-medium px-2.5 py-1 rounded-full border-0 outline-none cursor-pointer ${STATUS_STYLES[b.status] ?? STATUS_STYLES.pending}`}
-                          >
-                            <option value="pending">Pending</option>
-                            <option value="confirmed">Confirmed</option>
-                            <option value="cancelled">Cancelled</option>
-                          </select>
+                          {b.status !== "after_hours" && (
+                            <select
+                              value={b.status}
+                              onChange={(e) => handleStatusChange(b.id, e.target.value)}
+                              className={`text-xs font-medium px-2.5 py-1 rounded-full border-0 outline-none cursor-pointer ${STATUS_STYLES[b.status] ?? STATUS_STYLES.pending}`}
+                            >
+                              <option value="pending">Pending</option>
+                              <option value="confirmed">Confirmed</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
+                          )}
                         </div>
                       )}
                     </td>

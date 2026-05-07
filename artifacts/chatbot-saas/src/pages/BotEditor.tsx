@@ -3,12 +3,12 @@ import { useLocation, useParams, useSearch } from "wouter";
 import {
   Settings, Bot, Palette, FileText, Code2, ChevronLeft,
   Save, Check, Eye, EyeOff, Copy, ExternalLink, Plus, X,
-  Loader2, CalendarCheck, Volume2, VolumeX, Shield, BarChart2, Globe, Bell, ChevronDown, ChevronUp,
+  Loader2, CalendarCheck, Volume2, VolumeX, Shield, BarChart2, Globe, Bell, ChevronDown, ChevronUp, Clock,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { api, Bot as BotType, BotAppearance, NotificationsConfig, BotStats } from "../lib/api";
+import { api, Bot as BotType, BotAppearance, NotificationsConfig, BotStats, OfficeHoursSchedule } from "../lib/api";
 import Layout from "../components/Layout";
 
 const PROVIDERS = [
@@ -53,8 +53,37 @@ const KEY_LINKS: Record<string, { label: string; url: string }> = {
   openrouter: { label: "openrouter.ai/keys", url: "https://openrouter.ai/keys" },
 };
 
+const DEFAULT_OFFICE_HOURS_SCHEDULE: OfficeHoursSchedule = {
+  monday: { open: "09:00", close: "18:00", closed: false },
+  tuesday: { open: "09:00", close: "18:00", closed: false },
+  wednesday: { open: "09:00", close: "18:00", closed: false },
+  thursday: { open: "09:00", close: "18:00", closed: false },
+  friday: { open: "09:00", close: "18:00", closed: false },
+  saturday: { open: "10:00", close: "16:00", closed: false },
+  sunday: { open: "09:00", close: "17:00", closed: true },
+};
+
+const US_TIMEZONES = [
+  { value: "America/New_York", label: "Eastern Time (ET)" },
+  { value: "America/Chicago", label: "Central Time (CT)" },
+  { value: "America/Denver", label: "Mountain Time (MT)" },
+  { value: "America/Los_Angeles", label: "Pacific Time (PT)" },
+  { value: "America/Anchorage", label: "Alaska Time (AKT)" },
+  { value: "Pacific/Honolulu", label: "Hawaii Time (HT)" },
+];
+
+const DAY_LABELS: { key: keyof OfficeHoursSchedule; label: string }[] = [
+  { key: "monday", label: "Monday" },
+  { key: "tuesday", label: "Tuesday" },
+  { key: "wednesday", label: "Wednesday" },
+  { key: "thursday", label: "Thursday" },
+  { key: "friday", label: "Friday" },
+  { key: "saturday", label: "Saturday" },
+  { key: "sunday", label: "Sunday" },
+];
+
 const DEFAULT_APPEARANCE: BotAppearance = {
-  primaryColor: "#6366f1",
+  primaryColor: "#6C63FF",
   botName: "",
   welcomeMessage: "Hi! How can I help you today?",
   fallbackMessage: "Sorry, I didn't quite understand that. Could you rephrase?",
@@ -70,12 +99,16 @@ const DEFAULT_APPEARANCE: BotAppearance = {
   services: [],
   bookingConfirmationMessage: "Your appointment has been booked! We'll be in touch shortly to confirm. 🎉",
   officeHours: "",
-  afterHoursMessage: "",
+  afterHoursMessage: "We're currently closed! I've noted your message and our team will reach out first thing tomorrow. You can also call us and leave a voicemail! 😊",
   soundEnabled: false,
   showBranding: true,
   brandingText: "",
   brandingUrl: "",
   proactiveGreetingDelay: 0,
+  showWelcomeForm: false,
+  officeHoursEnabled: false,
+  officeHoursTimezone: "America/New_York",
+  officeHoursSchedule: { ...DEFAULT_OFFICE_HOURS_SCHEDULE },
 };
 
 const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
@@ -94,7 +127,7 @@ const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
   zapierEnabled: false,
 };
 
-type TabId = "general" | "ai" | "appearance" | "prompt" | "booking" | "notifications" | "security" | "stats" | "integration";
+type TabId = "general" | "ai" | "appearance" | "prompt" | "booking" | "office-hours" | "notifications" | "security" | "stats" | "integration";
 
 const BASE_TABS: { id: TabId; icon: React.ComponentType<{ className?: string }>; label: string }[] = [
   { id: "general", icon: Settings, label: "General" },
@@ -102,13 +135,14 @@ const BASE_TABS: { id: TabId; icon: React.ComponentType<{ className?: string }>;
   { id: "appearance", icon: Palette, label: "Appearance" },
   { id: "prompt", icon: FileText, label: "System Prompt" },
   { id: "booking", icon: CalendarCheck, label: "Booking" },
+  { id: "office-hours", icon: Clock, label: "Office Hours" },
   { id: "notifications", icon: Bell, label: "Notifications" },
   { id: "security", icon: Shield, label: "Security" },
   { id: "stats", icon: BarChart2, label: "Stats" },
   { id: "integration", icon: Code2, label: "Integration" },
 ];
 
-const PALETTE = ["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#eab308","#22c55e","#06b6d4","#3b82f6","#0f172a"];
+const PALETTE = ["#6C63FF","#8b5cf6","#ec4899","#ef4444","#f97316","#eab308","#22c55e","#4ECDC4","#3b82f6","#0f172a"];
 const TONES = ["friendly","professional","casual","formal","concise","enthusiastic"];
 
 function Field({ label, helper, children }: { label: string; helper?: string; children: React.ReactNode }) {
@@ -125,7 +159,7 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all ${props.className ?? ""}`}
+      className={`w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#6C63FF]/30 focus:border-[#6C63FF] transition-all ${props.className ?? ""}`}
     />
   );
 }
@@ -134,7 +168,7 @@ function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
-      className={`w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all resize-none ${props.className ?? ""}`}
+      className={`w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#6C63FF]/30 focus:border-[#6C63FF] transition-all resize-none ${props.className ?? ""}`}
     />
   );
 }
@@ -144,7 +178,7 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean
     <button
       type="button"
       onClick={() => onChange(!enabled)}
-      className={`relative inline-flex w-9 h-5 rounded-full transition-colors flex-shrink-0 ${enabled ? "bg-indigo-500" : "bg-slate-200"}`}
+      className={`relative inline-flex w-9 h-5 rounded-full transition-colors flex-shrink-0 ${enabled ? "bg-[#6C63FF]" : "bg-slate-200"}`}
     >
       <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`} />
     </button>
@@ -196,7 +230,7 @@ function NotifCard({
               <button
                 type="button"
                 onClick={toggleHint}
-                className="flex items-center gap-1.5 text-xs text-indigo-500 hover:text-indigo-700 font-medium transition-colors"
+                className="flex items-center gap-1.5 text-xs text-[#6C63FF] hover:text-[#5a52e0] font-medium transition-colors"
               >
                 {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 {isExpanded ? "Hide setup instructions" : "How does this work?"}
@@ -208,7 +242,7 @@ function NotifCard({
                     <ol className="space-y-1.5 mt-1">
                       {steps.map((s, i) => (
                         <li key={i} className="flex items-start gap-2">
-                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#6C63FF]/10 text-[#6C63FF] text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
                           <span>{s}</span>
                         </li>
                       ))}
@@ -281,7 +315,7 @@ function ReportLinkSection({ botId }: { botId: string }) {
         <button
           onClick={generate}
           disabled={loading}
-          className="flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 bg-[#6C63FF] hover:bg-[#5a52e0] disabled:opacity-50 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
         >
           {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
           Generate Report Link
@@ -294,6 +328,22 @@ function ReportLinkSection({ botId }: { botId: string }) {
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function PromptLengthIndicator({ length }: { length: number }) {
+  let color = "text-emerald-600 bg-emerald-50 border-emerald-200";
+  let label = "Good length";
+  let dot = "bg-emerald-500";
+  if (length === 0) { color = "text-slate-400 bg-slate-50 border-slate-200"; label = "Empty"; dot = "bg-slate-300"; }
+  else if (length < 100) { color = "text-amber-600 bg-amber-50 border-amber-200"; label = "Too short"; dot = "bg-amber-500"; }
+  else if (length > 1000) { color = "text-red-600 bg-red-50 border-red-200"; label = "Very long — may cause slow/wordy responses"; dot = "bg-red-500"; }
+  else if (length > 500) { color = "text-amber-600 bg-amber-50 border-amber-200"; label = "Getting long"; dot = "bg-amber-500"; }
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border ${color}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+      {length} chars · {label}
+    </span>
+  );
 }
 
 export default function BotEditor() {
@@ -334,7 +384,6 @@ export default function BotEditor() {
 
   useEffect(() => {
     if (isNew) {
-      // Check for a pending template from the Dashboard
       const raw = localStorage.getItem("botTemplate");
       if (raw) {
         localStorage.removeItem("botTemplate");
@@ -373,7 +422,6 @@ export default function BotEditor() {
     }
   }, [params.id]);
 
-  // Load stats when stats tab is activated
   useEffect(() => {
     if (activeTab === "stats" && !isNew && params.id) {
       setStatsLoading(true);
@@ -392,6 +440,23 @@ export default function BotEditor() {
       ...prev,
       appearance: { ...(prev.appearance ?? DEFAULT_APPEARANCE), [key]: value },
     }));
+  }, []);
+
+  const updateOfficeHoursSchedule = useCallback((day: keyof OfficeHoursSchedule, field: string, value: unknown) => {
+    setBot((prev) => {
+      const cur = prev.appearance ?? DEFAULT_APPEARANCE;
+      const curSchedule = cur.officeHoursSchedule ?? DEFAULT_OFFICE_HOURS_SCHEDULE;
+      return {
+        ...prev,
+        appearance: {
+          ...cur,
+          officeHoursSchedule: {
+            ...curSchedule,
+            [day]: { ...curSchedule[day], [field]: value },
+          },
+        },
+      };
+    });
   }, []);
 
   const updateNotifications = useCallback((key: keyof NotificationsConfig, value: unknown) => {
@@ -454,6 +519,7 @@ export default function BotEditor() {
   const embedCode = bot.publicId
     ? `<script src="${window.location.origin}/api/widget.js?botId=${bot.publicId}"></script>`
     : null;
+  const officeSchedule = appearance.officeHoursSchedule ?? DEFAULT_OFFICE_HOURS_SCHEDULE;
 
   const TABS = isNew ? BASE_TABS.filter((t) => t.id !== "stats") : BASE_TABS;
 
@@ -505,7 +571,7 @@ export default function BotEditor() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 bg-[#6C63FF] hover:bg-[#5a52e0] disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             {saving ? "Saving…" : isNew ? "Create Bot" : "Save"}
@@ -524,7 +590,7 @@ export default function BotEditor() {
               onClick={() => setActiveTab(id)}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium mb-0.5 transition-all duration-150 ${
                 activeTab === id
-                  ? "bg-indigo-50 text-indigo-600"
+                  ? "bg-[#6C63FF]/10 text-[#6C63FF]"
                   : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
               }`}
             >
@@ -570,33 +636,30 @@ export default function BotEditor() {
                         <button
                           key={p.value}
                           onClick={() => { update("provider", p.value); update("model", MODELS[p.value][0]?.value ?? ""); }}
-                          className={`flex items-center gap-2.5 px-3.5 py-3 rounded-xl border text-left transition-all ${bot.provider === p.value ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                          className={`text-left p-3 rounded-xl border-2 transition-all ${bot.provider === p.value ? "border-[#6C63FF] bg-[#6C63FF]/5" : "border-slate-200 hover:border-slate-300 bg-white"}`}
                         >
-                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 leading-tight">{p.label}</p>
-                            <p className="text-xs text-slate-400 mt-0.5">{p.sub}</p>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
+                            <span className="text-xs font-semibold text-slate-900">{p.label}</span>
                           </div>
+                          <p className="text-[11px] text-slate-400">{p.sub}</p>
                         </button>
                       ))}
                     </div>
                   </Field>
-                </Section>
-
-                <Section title="Model">
-                  <Field label="Select model">
-                    <div className="grid grid-cols-1 gap-1.5">
+                  <Field label="Model">
+                    <div className="space-y-1.5">
                       {models.map((m) => (
                         <button
                           key={m.value}
-                          onClick={() => { update("model", m.value); if (m.value !== "_custom") setCustomModel(""); }}
-                          className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg border text-sm transition-all ${
-                            (bot.model === m.value || (m.value === "_custom" && !models.find(x => x.value === bot.model && x.value !== "_custom") && bot.provider === "openrouter"))
-                              ? "border-indigo-400 bg-indigo-50 text-indigo-700"
-                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                          onClick={() => update("model", m.value)}
+                          className={`w-full text-left flex items-center justify-between px-3.5 py-2.5 rounded-lg border text-sm transition-all ${
+                            (bot.model === m.value || (m.value === "_custom" && bot.model && !models.find(x => x.value === bot.model && x.value !== "_custom")))
+                              ? "border-[#6C63FF] bg-[#6C63FF]/5 text-slate-900"
+                              : "border-slate-200 text-slate-700 hover:border-slate-300 bg-white"
                           }`}
                         >
-                          <span className="font-medium">{m.label}</span>
+                          <span>{m.label}</span>
                           {m.note && (
                             <span className={`text-xs px-1.5 py-0.5 rounded-full ${m.note.startsWith("Free") ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>
                               {m.note}
@@ -616,7 +679,7 @@ export default function BotEditor() {
                         />
                         <p className="text-xs text-slate-400 mt-1.5">
                           Browse model IDs at{" "}
-                          <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline">openrouter.ai/models</a>
+                          <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer" className="text-[#6C63FF] hover:underline">openrouter.ai/models</a>
                         </p>
                       </div>
                     )}
@@ -645,7 +708,7 @@ export default function BotEditor() {
                       </div>
                     </div>
                     {keyLink && (
-                      <a href={keyLink.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:underline mt-2">
+                      <a href={keyLink.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-[#6C63FF] hover:underline mt-2">
                         Get key from {keyLink.label}
                         <ExternalLink className="w-3 h-3" />
                       </a>
@@ -670,7 +733,7 @@ export default function BotEditor() {
                   <Field label="Primary Color">
                     <div className="flex items-center gap-2.5">
                       <input type="color" value={appearance.primaryColor} onChange={(e) => updateAppearance("primaryColor", e.target.value)} className="w-10 h-10 rounded-lg border border-slate-200 cursor-pointer p-0.5 bg-white" />
-                      <Input value={appearance.primaryColor} onChange={(e) => updateAppearance("primaryColor", e.target.value)} className="w-32" placeholder="#6366f1" />
+                      <Input value={appearance.primaryColor} onChange={(e) => updateAppearance("primaryColor", e.target.value)} className="w-32" placeholder="#6C63FF" />
                       <div className="w-10 h-10 rounded-lg border border-slate-200 flex-shrink-0" style={{ backgroundColor: appearance.primaryColor }} />
                     </div>
                     <div className="flex gap-2 mt-2.5 flex-wrap">
@@ -690,10 +753,10 @@ export default function BotEditor() {
                     {(appearance.showBranding ?? true) && (
                       <div className="grid grid-cols-2 gap-3 pl-1">
                         <Field label="Brand Name" helper='e.g. "Cluvi" — shown as clickable text'>
-                          <Input value={appearance.brandingText ?? ""} onChange={(e) => updateAppearance("brandingText", e.target.value)} placeholder="BotBuilder" />
+                          <Input value={appearance.brandingText ?? ""} onChange={(e) => updateAppearance("brandingText", e.target.value)} placeholder="Cluvi" />
                         </Field>
                         <Field label="Brand URL" helper="Where the brand name links to">
-                          <Input type="url" value={appearance.brandingUrl ?? ""} onChange={(e) => updateAppearance("brandingUrl", e.target.value)} placeholder="https://botbuilder.app" />
+                          <Input type="url" value={appearance.brandingUrl ?? ""} onChange={(e) => updateAppearance("brandingUrl", e.target.value)} placeholder="https://cluvi.app" />
                         </Field>
                       </div>
                     )}
@@ -715,12 +778,23 @@ export default function BotEditor() {
                       <span className="text-xs text-slate-400">seconds delay (0 = off)</span>
                     </div>
                   </Field>
-                  <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-1">
-                    <div>
-                      <p className="text-sm font-medium text-slate-700">Lead Capture Form</p>
-                      <p className="text-xs text-slate-400 mt-0.5">Ask visitors for their name &amp; email before chatting. They can skip. Leads appear in your Leads inbox.</p>
+                  <div className="space-y-3 border-t border-slate-100 pt-3 mt-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Show welcome form before chat</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Ask visitors for their name &amp; email before chatting. They can skip.</p>
+                      </div>
+                      <Toggle enabled={appearance.showWelcomeForm ?? false} onChange={(v) => updateAppearance("showWelcomeForm", v)} />
                     </div>
-                    <Toggle enabled={appearance.leadCaptureEnabled ?? false} onChange={(v) => updateAppearance("leadCaptureEnabled", v)} />
+                    {(appearance.showWelcomeForm ?? false) && (
+                      <div className="flex items-center justify-between pl-1">
+                        <div>
+                          <p className="text-sm font-medium text-slate-700">Save leads to inbox</p>
+                          <p className="text-xs text-slate-400 mt-0.5">Captured names &amp; emails appear in your Leads page.</p>
+                        </div>
+                        <Toggle enabled={appearance.leadCaptureEnabled ?? false} onChange={(v) => updateAppearance("leadCaptureEnabled", v)} />
+                      </div>
+                    )}
                   </div>
                 </Section>
 
@@ -734,7 +808,7 @@ export default function BotEditor() {
                   <Field label="Tone">
                     <div className="flex flex-wrap gap-2">
                       {TONES.map((t) => (
-                        <button key={t} onClick={() => updateAppearance("tone", t)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize ${appearance.tone === t ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-slate-200 text-slate-500 hover:border-slate-300 bg-white"}`}>
+                        <button key={t} onClick={() => updateAppearance("tone", t)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize ${appearance.tone === t ? "border-[#6C63FF] bg-[#6C63FF]/10 text-[#6C63FF]" : "border-slate-200 text-slate-500 hover:border-slate-300 bg-white"}`}>
                           {t}
                         </button>
                       ))}
@@ -774,8 +848,8 @@ export default function BotEditor() {
             {/* ── PROMPT ── */}
             {activeTab === "prompt" && (
               <>
-                <div className="flex items-start gap-3 bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800">
-                  <FileText className="w-4 h-4 flex-shrink-0 mt-0.5 text-indigo-500" />
+                <div className="flex items-start gap-3 bg-[#6C63FF]/5 border border-[#6C63FF]/20 rounded-xl p-4 text-sm text-[#6C63FF]">
+                  <FileText className="w-4 h-4 flex-shrink-0 mt-0.5" />
                   <div><strong>Tip:</strong> Be specific about what the bot knows, how it should behave, and what it should never say.</div>
                 </div>
                 <Section title="System Prompt">
@@ -783,16 +857,22 @@ export default function BotEditor() {
                     value={bot.systemPrompt ?? ""}
                     onChange={(e) => update("systemPrompt", e.target.value)}
                     rows={18}
-                    placeholder={`You are a helpful assistant for [Business Name]...\n\nYou help customers by:\n- Answering questions about services and pricing\n- Booking appointments\n- Providing contact info\n\nAlways be ${appearance.tone} and professional.`}
+                    placeholder={`You are a helpful assistant for [Business Name]...\n\nYou help customers by:\n- Answering questions about services and pricing\n- Booking appointments\n- Providing contact info\n\nKeep all responses under 2-3 sentences. Be concise and conversational, never wordy. Get straight to the point.\n\nAlways be ${appearance.tone} and professional.`}
                   />
-                  <div className="flex items-center justify-between mt-1.5">
-                    <p className="text-xs text-slate-400">{bot.systemPrompt?.length ?? 0} characters</p>
+                  <div className="flex items-center justify-between mt-2">
+                    <PromptLengthIndicator length={bot.systemPrompt?.length ?? 0} />
                     <button
-                      onClick={() => update("systemPrompt", `You are a helpful AI assistant for ${bot.name ?? "this business"}${appearance.businessType ? `, a ${appearance.businessType}` : ""}.\n\nYou help customers by:\n- Answering questions about services, pricing, and hours\n- Collecting appointment bookings (ask for name, phone, preferred date/time)\n- Providing contact information when needed\n\nBusiness contact info:\n${appearance.phone ? `- Phone: ${appearance.phone}\n` : ""}${appearance.email ? `- Email: ${appearance.email}\n` : ""}${appearance.address ? `- Address: ${appearance.address}\n` : ""}\nServices offered: ${(appearance.services ?? []).join(", ") || "Ask the customer what they need"}\n\nTone: Be ${appearance.tone}, clear, and concise. Keep responses to 2–3 sentences unless listing multiple items.\n\nNever make up information. If unsure, ask the customer to call directly.`)}
-                      className="text-xs text-indigo-500 hover:underline font-medium"
+                      onClick={() => update("systemPrompt", `You are a helpful AI assistant for ${bot.name ?? "this business"}${appearance.businessType ? `, a ${appearance.businessType}` : ""}.\n\nYou help customers by:\n- Answering questions about services, pricing, and hours\n- Collecting appointment bookings (ask for name, phone, preferred date/time)\n- Providing contact information when needed\n\nBusiness contact info:\n${appearance.phone ? `- Phone: ${appearance.phone}\n` : ""}${appearance.email ? `- Email: ${appearance.email}\n` : ""}${appearance.address ? `- Address: ${appearance.address}\n` : ""}\nServices offered: ${(appearance.services ?? []).join(", ") || "Ask the customer what they need"}\n\nKeep all responses under 2-3 sentences. Be concise and conversational, never wordy. Get straight to the point.\n\nTone: Be ${appearance.tone}, clear, and concise.\n\nNever make up information. If unsure, ask the customer to call directly.`)}
+                      className="text-xs text-[#6C63FF] hover:underline font-medium"
                     >
                       Generate starter prompt
                     </button>
+                  </div>
+                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg p-3 mt-1">
+                    <span className="text-sm">💡</span>
+                    <p className="text-xs text-amber-700">
+                      <strong>Tip:</strong> Tell your bot to keep responses short for better user experience. Example: "Keep all responses under 2-3 sentences. Be concise and conversational."
+                    </p>
                   </div>
                 </Section>
               </>
@@ -838,15 +918,12 @@ export default function BotEditor() {
                   <Field label="Confirmation Message" helper="Shown to visitor after they confirm a booking.">
                     <Textarea value={appearance.bookingConfirmationMessage} onChange={(e) => updateAppearance("bookingConfirmationMessage", e.target.value)} rows={2} placeholder="Your appointment has been booked! We'll be in touch shortly. 🎉" />
                   </Field>
-                  <Field label="Office Hours" helper="Optional — the AI can reference this when asked.">
+                  <Field label="Office Hours Display Text" helper="Optional — the AI can reference this when asked about hours.">
                     <Input value={appearance.officeHours} onChange={(e) => updateAppearance("officeHours", e.target.value)} placeholder="Mon–Fri 9am–5pm, Sat 10am–2pm" />
-                  </Field>
-                  <Field label="After-Hours Message">
-                    <Input value={appearance.afterHoursMessage} onChange={(e) => updateAppearance("afterHoursMessage", e.target.value)} placeholder="We're currently closed. Leave your details and we'll call you back!" />
                   </Field>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      {appearance.soundEnabled ? <Volume2 className="w-4 h-4 text-indigo-500" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+                      {appearance.soundEnabled ? <Volume2 className="w-4 h-4 text-[#6C63FF]" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
                       <div>
                         <p className="text-sm font-medium text-slate-700">Sound notification</p>
                         <p className="text-xs text-slate-400">Play a subtle sound when the bot replies</p>
@@ -855,7 +932,113 @@ export default function BotEditor() {
                     <Toggle enabled={appearance.soundEnabled} onChange={(v) => updateAppearance("soundEnabled", v)} />
                   </div>
                 </Section>
+              </>
+            )}
 
+            {/* ── OFFICE HOURS ── */}
+            {activeTab === "office-hours" && (
+              <>
+                <div className="flex items-start gap-3 bg-[#6C63FF]/5 border border-[#6C63FF]/20 rounded-xl p-4 text-sm text-[#6C63FF]">
+                  <Clock className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <div>
+                    When enabled, users who message outside your office hours are greeted with a friendly message and their info is collected automatically — no AI API call needed.
+                  </div>
+                </div>
+
+                <Section title="After Hours Detection">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Enable after-hours detection</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Intercept messages outside office hours and collect lead info automatically.</p>
+                    </div>
+                    <Toggle enabled={appearance.officeHoursEnabled ?? false} onChange={(v) => updateAppearance("officeHoursEnabled", v)} />
+                  </div>
+
+                  {(appearance.officeHoursEnabled ?? false) && (
+                    <>
+                      <Field label="Timezone">
+                        <select
+                          value={appearance.officeHoursTimezone ?? "America/New_York"}
+                          onChange={(e) => updateAppearance("officeHoursTimezone", e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6C63FF]/30 focus:border-[#6C63FF] transition-all"
+                        >
+                          {US_TIMEZONES.map((tz) => (
+                            <option key={tz.value} value={tz.value}>{tz.label}</option>
+                          ))}
+                        </select>
+                      </Field>
+
+                      <div>
+                        <label className="block text-[13px] font-medium text-slate-700 mb-2">Weekly Schedule</label>
+                        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                          <div className="grid grid-cols-[100px_80px_1fr_1fr] gap-0 text-[11px] font-semibold text-slate-500 uppercase tracking-wide px-4 py-2 border-b border-slate-100 bg-slate-50">
+                            <span>Day</span>
+                            <span>Closed</span>
+                            <span>Opens</span>
+                            <span>Closes</span>
+                          </div>
+                          {DAY_LABELS.map(({ key, label }) => {
+                            const day = officeSchedule[key];
+                            return (
+                              <div key={key} className="grid grid-cols-[100px_80px_1fr_1fr] items-center gap-0 px-4 py-2.5 border-b border-slate-50 last:border-b-0 hover:bg-slate-50/50 transition-colors">
+                                <span className="text-sm font-medium text-slate-700">{label}</span>
+                                <div className="flex items-center">
+                                  <Toggle
+                                    enabled={day.closed}
+                                    onChange={(v) => updateOfficeHoursSchedule(key, "closed", v)}
+                                  />
+                                </div>
+                                <input
+                                  type="time"
+                                  value={day.open}
+                                  disabled={day.closed}
+                                  onChange={(e) => updateOfficeHoursSchedule(key, "open", e.target.value)}
+                                  className="w-28 text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#6C63FF]/30 disabled:opacity-30 disabled:cursor-not-allowed bg-white"
+                                />
+                                <input
+                                  type="time"
+                                  value={day.close}
+                                  disabled={day.closed}
+                                  onChange={(e) => updateOfficeHoursSchedule(key, "close", e.target.value)}
+                                  className="w-28 text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#6C63FF]/30 disabled:opacity-30 disabled:cursor-not-allowed bg-white"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </Section>
+
+                {(appearance.officeHoursEnabled ?? false) && (
+                  <Section title="After-Hours Message" helper="This is the first message users see when they reach out outside business hours.">
+                    <Field label="Greeting Message">
+                      <Textarea
+                        value={appearance.afterHoursMessage ?? ""}
+                        onChange={(e) => updateAppearance("afterHoursMessage", e.target.value)}
+                        rows={3}
+                        placeholder="We're currently closed! I've noted your message and our team will reach out first thing tomorrow. You can also call us and leave a voicemail! 😊"
+                      />
+                    </Field>
+                    <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                      <span className="text-sm">🌙</span>
+                      <p className="text-xs text-blue-700">
+                        After this message, the bot automatically collects the visitor's name, phone, and reason — then saves it as an "After Hours Lead" in your Bookings page and sends you a notification.
+                      </p>
+                    </div>
+                  </Section>
+                )}
+
+                {!(appearance.officeHoursEnabled ?? false) && (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Clock className="w-10 h-10 text-slate-200 mb-3" />
+                    <p className="text-slate-500 font-medium">After-hours detection is disabled</p>
+                    <p className="text-slate-400 text-sm mt-1 max-w-xs">
+                      Enable it above to automatically handle messages received outside your business hours.
+                    </p>
+                  </div>
+                )}
               </>
             )}
 
@@ -864,10 +1047,9 @@ export default function BotEditor() {
               <>
                 <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800 mb-1">
                   <Bell className="w-4 h-4 flex-shrink-0 mt-0.5 text-blue-500" />
-                  <div>Get notified the moment a new booking comes in. Enable any combination of channels below.</div>
+                  <div>Get notified the moment a new booking or after-hours lead comes in. Enable any combination of channels below.</div>
                 </div>
 
-                {/* Email */}
                 <NotifCard
                   icon="📧" title="Email Notification" description="Get an email when a booking comes in"
                   enabled={notifications.resendEnabled} onToggle={(v) => updateNotifications("resendEnabled", v)}
@@ -880,7 +1062,6 @@ export default function BotEditor() {
                   </p>
                 </NotifCard>
 
-                {/* SMS */}
                 <NotifCard
                   icon="📱" title="SMS Notification" description="Get a text message when a booking comes in"
                   enabled={notifications.twilioEnabled} onToggle={(v) => updateNotifications("twilioEnabled", v)}
@@ -896,7 +1077,6 @@ export default function BotEditor() {
                   </Field>
                 </NotifCard>
 
-                {/* WhatsApp */}
                 <NotifCard
                   icon="💬" title="WhatsApp Notification" description="Get a WhatsApp message when a booking comes in"
                   enabled={notifications.twilioWhatsappEnabled} onToggle={(v) => updateNotifications("twilioWhatsappEnabled", v)}
@@ -912,7 +1092,6 @@ export default function BotEditor() {
                   </Field>
                 </NotifCard>
 
-                {/* Telegram */}
                 <NotifCard
                   icon="✈️" title="Telegram Notification" description="Get a Telegram message when a booking comes in"
                   enabled={notifications.telegramEnabled} onToggle={(v) => updateNotifications("telegramEnabled", v)}
@@ -946,7 +1125,6 @@ export default function BotEditor() {
                   </div>
                 </NotifCard>
 
-                {/* Discord */}
                 <NotifCard
                   icon="🎮" title="Discord Notification" description="Post a message to your Discord server when a booking comes in"
                   enabled={notifications.discordEnabled} onToggle={(v) => updateNotifications("discordEnabled", v)}
@@ -968,7 +1146,6 @@ export default function BotEditor() {
                   </Field>
                 </NotifCard>
 
-                {/* Zapier */}
                 <NotifCard
                   icon="🔗" title="Zapier / Webhook" description="POST booking data to any URL — Zapier, Make, n8n, or custom"
                   enabled={notifications.zapierEnabled !== false} onToggle={(v) => updateNotifications("zapierEnabled", v)}
@@ -977,17 +1154,13 @@ export default function BotEditor() {
                   steps={[
                     "In Zapier, create a new Zap with a Webhook trigger",
                     "Choose 'Catch Hook' and copy the webhook URL",
-                    "Paste the URL below — bookings will be sent as JSON",
-                    "Map the fields: name, phone, service, date, timePreference",
+                    "Paste the URL in the Bot → General tab → Lead Webhook URL field",
+                    "Bookings will be sent as JSON with name, phone, service, date, time",
                   ]}
                 >
-                  <Field label="Webhook URL">
-                    <Input
-                      value={bot.leadWebhookUrl ?? ""}
-                      onChange={(e) => update("leadWebhookUrl", e.target.value)}
-                      placeholder="https://hooks.zapier.com/..."
-                    />
-                  </Field>
+                  <p className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 border border-slate-100">
+                    Set the webhook URL in the <strong>General</strong> tab → Lead Webhook URL.
+                  </p>
                 </NotifCard>
               </>
             )}
@@ -995,8 +1168,8 @@ export default function BotEditor() {
             {/* ── SECURITY ── */}
             {activeTab === "security" && (
               <>
-                <div className="flex items-start gap-3 bg-amber-50 border border-amber-100 rounded-xl p-4 text-sm text-amber-800">
-                  <Shield className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-500" />
+                <div className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700">
+                  <Shield className="w-4 h-4 flex-shrink-0 mt-0.5 text-slate-400" />
                   <div>
                     <strong>Domain Whitelist</strong> — if set, the widget will only respond on the listed domains. Leave empty to allow all domains.
                   </div>
@@ -1078,8 +1251,8 @@ export default function BotEditor() {
                           <AreaChart data={stats.dailyConversations} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
                             <defs>
                               <linearGradient id="botGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                                <stop offset="5%" stopColor="#6C63FF" stopOpacity={0.2} />
+                                <stop offset="95%" stopColor="#6C63FF" stopOpacity={0} />
                               </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -1089,7 +1262,7 @@ export default function BotEditor() {
                               contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12 }}
                               labelFormatter={formatDate}
                             />
-                            <Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={2} fill="url(#botGrad)" name="Conversations" />
+                            <Area type="monotone" dataKey="count" stroke="#6C63FF" strokeWidth={2} fill="url(#botGrad)" name="Conversations" />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
@@ -1173,7 +1346,7 @@ export default function BotEditor() {
                         href={`/preview?botId=${bot.publicId}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                        className="inline-flex items-center gap-1.5 bg-[#6C63FF] hover:bg-[#5a52e0] text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         Open Preview

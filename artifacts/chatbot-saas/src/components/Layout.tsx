@@ -6,7 +6,6 @@ import {
   BarChart3,
   LogOut,
   Plus,
-  Zap,
   CalendarCheck,
   MessageSquare,
   Settings,
@@ -37,12 +36,12 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
-      <aside className="fixed inset-y-0 left-0 w-[220px] bg-[#0f172a] flex flex-col z-30 border-r border-white/5">
+      <aside className="fixed inset-y-0 left-0 w-[220px] bg-[#1A1A2E] flex flex-col z-30 border-r border-white/5">
         <div className="flex items-center gap-2.5 px-5 h-[60px] border-b border-white/5 flex-shrink-0">
-          <div className="w-7 h-7 bg-indigo-500 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Zap className="w-3.5 h-3.5 text-white" />
+          <div className="w-7 h-7 bg-[#6C63FF] rounded-lg flex items-center justify-center flex-shrink-0">
+            <span className="text-white text-sm font-bold leading-none">⚡</span>
           </div>
-          <span className="text-white font-semibold text-[15px] tracking-tight">BotBuilder</span>
+          <span className="text-white font-bold text-[16px] tracking-tight">Cluvi</span>
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
@@ -55,14 +54,14 @@ export default function Layout({ children }: LayoutProps) {
               onClick={() => navigate(href)}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
                 isActive(href)
-                  ? "bg-indigo-500/10 text-indigo-400"
+                  ? "bg-[#6C63FF]/15 text-[#6C63FF]"
                   : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
               }`}
             >
-              <Icon className={`w-4 h-4 flex-shrink-0 ${isActive(href) ? "text-indigo-400" : ""}`} />
+              <Icon className={`w-4 h-4 flex-shrink-0 ${isActive(href) ? "text-[#6C63FF]" : ""}`} />
               {label}
               {isActive(href) && (
-                <span className="ml-auto w-1 h-1 rounded-full bg-indigo-400" />
+                <span className="ml-auto w-1 h-1 rounded-full bg-[#6C63FF]" />
               )}
             </button>
           ))}
@@ -75,7 +74,7 @@ export default function Layout({ children }: LayoutProps) {
               onClick={() => navigate("/")}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
                 location.startsWith("/bots")
-                  ? "bg-indigo-500/10 text-indigo-400"
+                  ? "bg-[#6C63FF]/15 text-[#6C63FF]"
                   : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
               }`}
             >
@@ -88,7 +87,7 @@ export default function Layout({ children }: LayoutProps) {
         <div className="px-3 pb-3">
           <button
             onClick={() => navigate("/bots/new")}
-            className="w-full flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 bg-[#6C63FF] hover:bg-[#5a52e0] text-white text-sm font-medium py-2 rounded-lg transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             New Bot
@@ -100,7 +99,7 @@ export default function Layout({ children }: LayoutProps) {
             onClick={() => navigate("/settings")}
             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 mb-1 ${
               isActive("/settings")
-                ? "bg-indigo-500/10 text-indigo-400"
+                ? "bg-[#6C63FF]/15 text-[#6C63FF]"
                 : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
             }`}
           >
@@ -108,7 +107,7 @@ export default function Layout({ children }: LayoutProps) {
             Admin Settings
           </button>
           <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-white/5 transition-colors group">
-            <div className="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-xs font-bold flex-shrink-0">
+            <div className="w-7 h-7 rounded-full bg-[#6C63FF]/20 flex items-center justify-center text-[#6C63FF] text-xs font-bold flex-shrink-0">
               {user?.username?.[0]?.toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">

@@ -52,7 +52,7 @@ export default function Login() {
           <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
             <Zap className="w-4 h-4 text-white" />
           </div>
-          <span className="text-white font-semibold text-[17px]">BotBuilder</span>
+          <span className="text-white font-semibold text-[17px]">Cluvi</span>
         </div>
 
         <div className="py-16">
@@ -84,7 +84,7 @@ export default function Login() {
         </div>
 
         <p className="text-slate-600 text-xs">
-          © {new Date().getFullYear()} BotBuilder. Built for agencies & freelancers.
+          © {new Date().getFullYear()} Cluvi. Your business, always on.
         </p>
       </div>
 
@@ -96,7 +96,7 @@ export default function Login() {
             <div className="w-7 h-7 bg-indigo-500 rounded-lg flex items-center justify-center">
               <Zap className="w-3.5 h-3.5 text-white" />
             </div>
-            <span className="text-white font-semibold text-base">BotBuilder</span>
+            <span className="text-white font-semibold text-base">Cluvi</span>
           </div>
 
           <div className="mb-7">

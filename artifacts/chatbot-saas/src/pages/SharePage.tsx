@@ -44,7 +44,7 @@ export default function SharePage() {
           <div className="w-4 h-4 bg-indigo-500 rounded flex items-center justify-center">
             <Zap className="w-2.5 h-2.5 text-white" />
           </div>
-          <span className="text-slate-400 font-medium">BotBuilder</span>
+          <span className="text-slate-400 font-medium">Cluvi</span>
         </div>
       </div>
 

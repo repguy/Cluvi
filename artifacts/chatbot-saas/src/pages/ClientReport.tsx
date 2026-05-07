@@ -85,7 +85,7 @@ export default function ClientReport() {
             <div className="w-4 h-4 rounded bg-indigo-500 flex items-center justify-center">
               <Zap className="w-2.5 h-2.5 text-white" />
             </div>
-            Powered by BotBuilder
+            Powered by Cluvi
           </div>
         </div>
       </div>

@@ -23,6 +23,22 @@ async function req<T>(
 
 export interface User { id: string; username: string; email: string }
 
+export interface OfficeHoursDaySchedule {
+  open: string;
+  close: string;
+  closed: boolean;
+}
+
+export interface OfficeHoursSchedule {
+  monday: OfficeHoursDaySchedule;
+  tuesday: OfficeHoursDaySchedule;
+  wednesday: OfficeHoursDaySchedule;
+  thursday: OfficeHoursDaySchedule;
+  friday: OfficeHoursDaySchedule;
+  saturday: OfficeHoursDaySchedule;
+  sunday: OfficeHoursDaySchedule;
+}
+
 export interface BotAppearance {
   primaryColor: string; botName: string; welcomeMessage: string; fallbackMessage: string;
   tone: string; quickActions: string[]; avatarText: string; businessType: string;
@@ -31,6 +47,10 @@ export interface BotAppearance {
   afterHoursMessage: string; soundEnabled: boolean;
   showBranding?: boolean; brandingText?: string; brandingUrl?: string;
   proactiveGreetingDelay?: number; leadCaptureEnabled?: boolean;
+  showWelcomeForm?: boolean;
+  officeHoursEnabled?: boolean;
+  officeHoursTimezone?: string;
+  officeHoursSchedule?: OfficeHoursSchedule;
 }
 
 export interface NotificationsConfig {

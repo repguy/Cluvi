@@ -70,7 +70,7 @@ async function callAI(
     const url = provider === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, ...(provider === "openrouter" ? { "HTTP-Referer": "https://botbuilder.app" } : {}) },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, ...(provider === "openrouter" ? { "HTTP-Referer": "https://cluvi.app" } : {}) },
       body: JSON.stringify({ model, max_tokens: 1000, messages: [{ role: "system", content: systemPrompt }, ...messages] }),
     });
     if (!res.ok) throw new Error(`${provider} error: ${await res.text()}`);
@@ -104,23 +104,30 @@ router.get("/widget/:publicId/config", async (req, res) => {
       res.status(403).json({ message: "Domain not allowed" }); return;
     }
 
+    const ap = bot.appearance as Record<string, unknown>;
+
     res.json({
-      name: bot.appearance.botName || bot.name,
-      primaryColor: bot.appearance.primaryColor,
-      welcomeMessage: bot.appearance.welcomeMessage,
-      fallbackMessage: bot.appearance.fallbackMessage,
-      quickActions: bot.appearance.quickActions ?? [],
-      avatarText: bot.appearance.avatarText || (bot.appearance.botName || bot.name)[0],
-      businessType: bot.appearance.businessType,
-      services: bot.appearance.services ?? [],
-      bookingConfirmationMessage: bot.appearance.bookingConfirmationMessage || "",
-      soundEnabled: bot.appearance.soundEnabled ?? false,
-      officeHours: bot.appearance.officeHours || "",
-      showBranding: bot.appearance.showBranding !== false,
-      brandingText: bot.appearance.brandingText || "",
-      brandingUrl: bot.appearance.brandingUrl || "",
-      proactiveGreetingDelay: bot.appearance.proactiveGreetingDelay ?? 0,
-      leadCaptureEnabled: bot.appearance.leadCaptureEnabled ?? false,
+      name: ap.botName || bot.name,
+      primaryColor: ap.primaryColor,
+      welcomeMessage: ap.welcomeMessage,
+      fallbackMessage: ap.fallbackMessage,
+      quickActions: (ap.quickActions as string[]) ?? [],
+      avatarText: ap.avatarText || ((ap.botName || bot.name) as string)[0],
+      businessType: ap.businessType,
+      services: (ap.services as string[]) ?? [],
+      bookingConfirmationMessage: (ap.bookingConfirmationMessage as string) || "",
+      soundEnabled: (ap.soundEnabled as boolean) ?? false,
+      officeHours: (ap.officeHours as string) || "",
+      showBranding: (ap.showBranding as boolean) !== false,
+      brandingText: (ap.brandingText as string) || "",
+      brandingUrl: (ap.brandingUrl as string) || "",
+      proactiveGreetingDelay: (ap.proactiveGreetingDelay as number) ?? 0,
+      leadCaptureEnabled: (ap.leadCaptureEnabled as boolean) ?? false,
+      showWelcomeForm: (ap.showWelcomeForm as boolean) ?? false,
+      officeHoursEnabled: (ap.officeHoursEnabled as boolean) ?? false,
+      officeHoursTimezone: (ap.officeHoursTimezone as string) || "America/New_York",
+      officeHoursSchedule: ap.officeHoursSchedule || null,
+      afterHoursMessage: (ap.afterHoursMessage as string) || "We're currently closed! I've noted your message and our team will reach out first thing tomorrow. You can also call us and leave a voicemail! \uD83D\uDE0A",
     });
   } catch { res.status(500).json({ message: "Internal server error" }); }
 });
@@ -134,12 +141,10 @@ router.post("/widget/:publicId/chat", async (req, res) => {
 
     const settings = await getSettingsForUser(bot.userId);
 
-    // Domain check (only when globally enabled)
     if (settings.domainWhitelistEnabled && !isDomainAllowed(bot.allowedDomains, req)) {
       res.status(403).json({ message: "Domain not allowed" }); return;
     }
 
-    // Rate limit (only when enabled)
     if (settings.rateLimitEnabled) {
       const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
       if (!checkRateLimit(`chat:${ip}`, settings.rateLimitChat, 60_000)) {
@@ -152,7 +157,6 @@ router.post("/widget/:publicId/chat", async (req, res) => {
 
     const reply = await callAI(bot.provider, bot.model, bot.apiKey, bot.systemPrompt, messages);
 
-    // Persist conversation asynchronously
     if (sessionId) {
       const fullMessages = [...messages, { role: "assistant", content: reply }];
       (async () => {
@@ -171,7 +175,7 @@ router.post("/widget/:publicId/chat", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "widget chat error");
     const raw = err instanceof Error ? err.message : "";
-    let msg = "Sorry, I'm having trouble responding. Please try again.";
+    let msg = "I'm having trouble connecting right now. Please try again in a moment or call us directly!";
     if (raw.includes("429") || /rate.?limit/i.test(raw)) msg = "This model is temporarily rate limited — please try again shortly.";
     else if (raw.includes("401") || /invalid.{0,20}key/i.test(raw)) msg = "There's an issue with the API key. Please ask the site owner to check their settings.";
     else if (raw.includes("404") || /not found/i.test(raw)) msg = "The configured AI model is unavailable. Please ask the site owner to update the model.";
@@ -212,42 +216,64 @@ router.post("/widget/:publicId/booking", async (req, res) => {
       }
     }
 
-    const { sessionId, name, phone, service, date, timePreference, email: customerEmail } = req.body as { sessionId?: string; name: string; phone: string; service: string; date: string; timePreference: string; email?: string };
+    const { sessionId, name, phone, service, date, timePreference, email: customerEmail, status: bookingStatus } = req.body as {
+      sessionId?: string; name: string; phone: string; service: string;
+      date: string; timePreference: string; email?: string; status?: string;
+    };
 
-    // ── Anti-troll: phone validation ────────────────────────────────────────
+    const isAfterHours = bookingStatus === "after_hours";
+
+    // ── Anti-troll: phone validation ──────────────────────────────────────────
     const digits = (phone ?? "").replace(/\D/g, "");
     if (digits.length < 7) {
       res.status(400).json({ message: "Please provide a valid phone number (at least 7 digits)." }); return;
     }
 
-    // ── Anti-troll: duplicate booking check (same phone + same bot, last 24h) ─
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [dupe] = await db
-      .select({ id: bookingsTable.id })
-      .from(bookingsTable)
-      .where(and(eq(bookingsTable.botId, bot.id), eq(bookingsTable.phone, phone), gte(bookingsTable.createdAt, oneDayAgo)))
-      .limit(1);
-    if (dupe) {
-      res.status(409).json({ message: "A booking with this phone number already exists for today. Please contact us directly if you need any changes." }); return;
+    // ── Anti-troll: duplicate booking check (same phone + same bot, last 24h) ──
+    // Skip duplicate check for after-hours leads
+    if (!isAfterHours) {
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const [dupe] = await db
+        .select({ id: bookingsTable.id })
+        .from(bookingsTable)
+        .where(and(eq(bookingsTable.botId, bot.id), eq(bookingsTable.phone, phone), gte(bookingsTable.createdAt, oneDayAgo)))
+        .limit(1);
+      if (dupe) {
+        res.status(409).json({ message: "A booking with this phone number already exists for today. Please contact us directly if you need any changes." }); return;
+      }
     }
 
-    const [booking] = await db.insert(bookingsTable).values({ botId: bot.id, sessionId: sessionId ?? "", name, phone, service, date, timePreference }).returning();
+    const [booking] = await db.insert(bookingsTable).values({
+      botId: bot.id,
+      sessionId: sessionId ?? "",
+      name,
+      phone,
+      service,
+      date,
+      timePreference,
+      status: isAfterHours ? "after_hours" : "pending",
+    }).returning();
 
     const nc = bot.notificationsConfig;
-    const businessName = bot.appearance.botName || bot.name;
-    const ownerEmail = bot.appearance.ownerEmail;
+    const businessName = (bot.appearance as Record<string, unknown>).botName as string || bot.name;
+    const ownerEmail = (bot.appearance as Record<string, unknown>).ownerEmail as string;
 
-    // Global credentials from env vars
     const resendApiKey = process.env.RESEND_API_KEY;
-    const resendFromEmail = process.env.RESEND_FROM_EMAIL || nc?.resendFromEmail || "bookings@cluvi.app";
+    const resendFromEmail = process.env.RESEND_FROM_EMAIL || (nc as Record<string, unknown>)?.resendFromEmail as string || "bookings@cluvi.app";
     const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
     const twilioFromPhone = process.env.TWILIO_FROM_PHONE;
     const twilioWhatsappFrom = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
 
+    const notifLabel = isAfterHours ? "\uD83C\uDF19 After Hours Lead" : "New Booking";
+    const notifSubject = isAfterHours ? `\uD83C\uDF19 After Hours Lead — ${businessName}` : `New Booking — ${businessName}`;
+    const notifEmoji = isAfterHours ? "\uD83C\uDF19" : "\uD83D\uDD14";
+
     (async () => {
-      // ── Owner email via Resend (global key) ───────────────────
-      if (nc?.resendEnabled && resendApiKey && ownerEmail) {
+      const ncMap = nc as Record<string, unknown>;
+
+      // ── Owner email via Resend ────────────────────────────────────────────
+      if (ncMap?.resendEnabled && resendApiKey && ownerEmail) {
         try {
           await fetch("https://api.resend.com/emails", {
             method: "POST",
@@ -255,15 +281,15 @@ router.post("/widget/:publicId/booking", async (req, res) => {
             body: JSON.stringify({
               from: resendFromEmail,
               to: [ownerEmail],
-              subject: `New Booking — ${businessName}`,
-              html: `<h2>New Booking</h2><p><b>Name:</b> ${name}</p><p><b>Phone:</b> ${phone}</p><p><b>Service:</b> ${service}</p><p><b>Date:</b> ${date}</p><p><b>Time:</b> ${timePreference}</p>`
+              subject: notifSubject,
+              html: `<h2>${notifLabel}</h2><p><b>Name:</b> ${name}</p><p><b>Phone:</b> ${phone}</p><p><b>${isAfterHours ? "Reason" : "Service"}:</b> ${service}</p>${!isAfterHours ? `<p><b>Date:</b> ${date}</p><p><b>Time:</b> ${timePreference}</p>` : ""}${isAfterHours ? "<p style='color:#6C63FF;font-weight:bold'>This is an after-hours lead — please reach out when you open.</p>" : ""}`
             })
           });
         } catch { /* ignore */ }
       }
 
-      // ── Customer confirmation email via Resend ─────────────────
-      if (nc?.resendEnabled && resendApiKey && customerEmail) {
+      // ── Customer confirmation email via Resend ────────────────────────────
+      if (!isAfterHours && ncMap?.resendEnabled && resendApiKey && customerEmail) {
         try {
           await fetch("https://api.resend.com/emails", {
             method: "POST",
@@ -278,71 +304,84 @@ router.post("/widget/:publicId/booking", async (req, res) => {
         } catch { /* ignore */ }
       }
 
-      // ── Owner SMS via Twilio (global credentials) ──────────────
-      if (nc?.twilioEnabled && twilioAccountSid && twilioAuthToken && nc.twilioOwnerPhone) {
+      // ── Owner SMS via Twilio ──────────────────────────────────────────────
+      if (ncMap?.twilioEnabled && twilioAccountSid && twilioAuthToken && ncMap.twilioOwnerPhone) {
         try {
           const creds = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64");
           await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${creds}` },
             body: new URLSearchParams({
-              To: nc.twilioOwnerPhone,
-              From: twilioFromPhone || nc.twilioOwnerPhone,
-              Body: `New booking at ${businessName}: ${name} | ${phone} | ${service} | ${date} | ${timePreference}`
+              To: ncMap.twilioOwnerPhone as string,
+              From: twilioFromPhone || ncMap.twilioOwnerPhone as string,
+              Body: isAfterHours
+                ? `${notifEmoji} After Hours Lead at ${businessName}: ${name} | ${phone} | Reason: ${service}`
+                : `New booking at ${businessName}: ${name} | ${phone} | ${service} | ${date} | ${timePreference}`
             }).toString()
           });
         } catch { /* ignore */ }
       }
 
-      // ── Owner WhatsApp via Twilio ──────────────────────────────
-      if (nc?.twilioWhatsappEnabled && twilioAccountSid && twilioAuthToken && nc.twilioWhatsappTo) {
+      // ── Owner WhatsApp via Twilio ─────────────────────────────────────────
+      if (ncMap?.twilioWhatsappEnabled && twilioAccountSid && twilioAuthToken && ncMap.twilioWhatsappTo) {
         try {
           const creds = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64");
           await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${creds}` },
             body: new URLSearchParams({
-              To: nc.twilioWhatsappTo,
-              From: nc.twilioWhatsappFrom || twilioWhatsappFrom,
-              Body: `🔔 New Booking at ${businessName}!\n\n👤 ${name}\n📞 ${phone}\n🛍️ ${service}\n📅 ${date} ${timePreference}`
+              To: ncMap.twilioWhatsappTo as string,
+              From: ncMap.twilioWhatsappFrom as string || twilioWhatsappFrom,
+              Body: isAfterHours
+                ? `${notifEmoji} After Hours Lead at ${businessName}!\n\n\uD83D\uDC64 ${name}\n\uD83D\uDCDE ${phone}\n\uD83D\uDCAC Reason: ${service}`
+                : `\uD83D\uDD14 New Booking at ${businessName}!\n\n\uD83D\uDC64 ${name}\n\uD83D\uDCDE ${phone}\n\uD83D\uDED1\uFE0F ${service}\n\uD83D\uDCC5 ${date} ${timePreference}`
             }).toString()
           });
         } catch { /* ignore */ }
       }
 
-      // ── Telegram ───────────────────────────────────────────────
-      if (nc?.telegramEnabled && nc.telegramBotToken && nc.telegramChatId) {
+      // ── Telegram ─────────────────────────────────────────────────────────
+      if (ncMap?.telegramEnabled && ncMap.telegramBotToken && ncMap.telegramChatId) {
         try {
-          await fetch(`https://api.telegram.org/bot${nc.telegramBotToken}/sendMessage`, {
+          await fetch(`https://api.telegram.org/bot${ncMap.telegramBotToken}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              chat_id: nc.telegramChatId,
-              text: `🔔 New Booking at ${businessName}!\n\n👤 Name: ${name}\n📞 Phone: ${phone}\n🛍️ Service: ${service}\n📅 Date: ${date}\n🕐 Time: ${timePreference}\n\nReply to confirm! ✅`,
+              chat_id: ncMap.telegramChatId,
+              text: isAfterHours
+                ? `${notifEmoji} After Hours Lead at ${businessName}!\n\n\uD83D\uDC64 Name: ${name}\n\uD83D\uDCDE Phone: ${phone}\n\uD83D\uDCAC Reason: ${service}\n\nPlease reach out when you open! \u2600\uFE0F`
+                : `\uD83D\uDD14 New Booking at ${businessName}!\n\n\uD83D\uDC64 Name: ${name}\n\uD83D\uDCDE Phone: ${phone}\n\uD83D\uDED1\uFE0F Service: ${service}\n\uD83D\uDCC5 Date: ${date}\n\uD83D\uDD50 Time: ${timePreference}\n\nReply to confirm! \u2705`,
               parse_mode: "HTML"
             })
           });
         } catch { /* ignore */ }
       }
 
-      // ── Discord webhook ────────────────────────────────────────
-      if (nc?.discordEnabled && nc.discordWebhookUrl) {
+      // ── Discord webhook ───────────────────────────────────────────────────
+      if (ncMap?.discordEnabled && ncMap.discordWebhookUrl) {
         try {
-          await fetch(nc.discordWebhookUrl, {
+          const fields = isAfterHours
+            ? [
+                { name: "\uD83D\uDC64 Name", value: name, inline: true },
+                { name: "\uD83D\uDCDE Phone", value: phone, inline: true },
+                { name: "\uD83D\uDCAC Reason", value: service, inline: false },
+              ]
+            : [
+                { name: "\uD83D\uDC64 Name", value: name, inline: true },
+                { name: "\uD83D\uDCDE Phone", value: phone, inline: true },
+                { name: "\uD83D\uDED1\uFE0F Service", value: service, inline: true },
+                { name: "\uD83D\uDCC5 Date", value: date, inline: true },
+                { name: "\uD83D\uDD50 Time", value: timePreference, inline: true },
+              ];
+          await fetch(ncMap.discordWebhookUrl as string, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               username: `${businessName} Bot`,
               embeds: [{
-                title: "🔔 New Booking!",
-                color: 3447003,
-                fields: [
-                  { name: "👤 Name", value: name, inline: true },
-                  { name: "📞 Phone", value: phone, inline: true },
-                  { name: "🛍️ Service", value: service, inline: true },
-                  { name: "📅 Date", value: date, inline: true },
-                  { name: "🕐 Time", value: timePreference, inline: true }
-                ],
+                title: `${notifEmoji} ${notifLabel}`,
+                color: isAfterHours ? 0x1A1A2E : 3447003,
+                fields,
                 footer: { text: "Powered by Cluvi" },
                 timestamp: new Date().toISOString()
               }]
@@ -351,13 +390,16 @@ router.post("/widget/:publicId/booking", async (req, res) => {
         } catch { /* ignore */ }
       }
 
-      // ── Zapier / custom webhook ────────────────────────────────
+      // ── Zapier / custom webhook ───────────────────────────────────────────
       if (bot.leadWebhookUrl) {
         try {
           await fetch(bot.leadWebhookUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ type: "booking", businessName, name, phone, service, date, timePreference })
+            body: JSON.stringify({
+              type: isAfterHours ? "after_hours_lead" : "booking",
+              businessName, name, phone, service, date, timePreference, isAfterHours
+            })
           });
         } catch { /* ignore */ }
       }
@@ -406,7 +448,7 @@ router.get("/widget.js", async (req, res) => {
 #_cb_foot{background:#fff;border-top:1px solid rgba(0,0,0,0.06);flex-shrink:0}
 #_cb_form{display:flex;align-items:center;gap:9px;padding:11px 12px}
 #_cb_inp{flex:1;border:1.5px solid #e2e8f0;border-radius:12px;padding:10px 14px;font-size:13px;color:#1e293b;outline:none;transition:border-color 0.15s,box-shadow 0.15s;background:#f8fafc;line-height:1.4}
-#_cb_inp:focus{border-color:var(--cb-col,#6366f1);box-shadow:0 0 0 3px rgba(99,102,241,0.1);background:#fff}
+#_cb_inp:focus{border-color:var(--cb-col,#6C63FF);box-shadow:0 0 0 3px rgba(108,99,255,0.1);background:#fff}
 #_cb_inp::placeholder{color:#94a3b8}
 #_cb_snd{width:38px;height:38px;border-radius:11px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform 0.15s,opacity 0.15s;padding:0;outline:none}
 #_cb_snd:hover{transform:scale(1.08)}
@@ -415,7 +457,7 @@ router.get("/widget.js", async (req, res) => {
 #_cb_snd svg{width:17px;height:17px;display:block}
 #_cb_pw{text-align:center;padding:5px 0 10px;font-size:10.5px;color:#94a3b8;letter-spacing:0.01em}
 #_cb_pw a{color:#94a3b8;text-decoration:none;font-weight:500}
-#_cb_pw a:hover{color:#6366f1}
+#_cb_pw a:hover{color:#6C63FF}
 ._cb_msg{display:flex;align-items:flex-end;gap:8px;animation:_cb_fadein 0.2s ease}
 @keyframes _cb_fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 ._cb_msg._u{flex-direction:row-reverse}
@@ -440,7 +482,7 @@ router.get("/widget.js", async (req, res) => {
 ._cb_lead_hd{font-size:15px;font-weight:700;color:#0f172a;line-height:1.3}
 ._cb_lead_sub{font-size:12.5px;color:#64748b;line-height:1.5;margin-top:-4px}
 ._cb_lead_inp{width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:10px 13px;font-size:13px;color:#1e293b;outline:none;transition:border-color 0.15s;box-sizing:border-box;font-family:inherit}
-._cb_lead_inp:focus{border-color:var(--cb-col,#6366f1);box-shadow:0 0 0 3px rgba(99,102,241,0.08)}
+._cb_lead_inp:focus{border-color:var(--cb-col,#6C63FF);box-shadow:0 0 0 3px rgba(108,99,255,0.08)}
 ._cb_lead_btn{width:100%;padding:11px;border-radius:11px;border:none;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:opacity 0.15s;font-family:inherit;margin-top:2px}
 ._cb_lead_btn:hover{opacity:0.88}
 ._cb_lead_skip{text-align:center;font-size:11.5px;color:#94a3b8;cursor:pointer;padding:2px;transition:color 0.15s}
@@ -460,17 +502,106 @@ router.get("/widget.js", async (req, res) => {
   var msgCount = 0;
   var MAX_MSGS = 50;
   var booking = null;
+  var afterHoursFlow = null;
   var proactiveTimer = null;
 
-  function hexToRgb(h){var r=/^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(h);return r?parseInt(r[1],16)+','+parseInt(r[2],16)+','+parseInt(r[3],16):'99,102,241';}
+  function hexToRgb(h){var r=/^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(h);return r?parseInt(r[1],16)+','+parseInt(r[2],16)+','+parseInt(r[3],16):'108,99,255';}
   function apiFetch(path,opts){return fetch(API_BASE+path,Object.assign({headers:{'Content-Type':'application/json'}},opts||{})).then(function(r){return r.json();});}
   function playSound(){if(!cfg||!cfg.soundEnabled)return;try{var ctx=new(window.AudioContext||window.webkitAudioContext)();var o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=880;o.type='sine';g.gain.setValueAtTime(0,ctx.currentTime);g.gain.linearRampToValueAtTime(0.06,ctx.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.3);o.start();o.stop(ctx.currentTime+0.3);}catch(e){}}
   function fmtTime(){var d=new Date();var h=d.getHours(),m=d.getMinutes();return (h%12||12)+':'+(m<10?'0':'')+m+(h<12?' AM':' PM');}
-  function col(){return (cfg&&cfg.primaryColor)||'#6366f1';}
-  function letter(){return ((cfg&&cfg.avatarText)||(cfg&&cfg.name&&cfg.name[0])||'B').charAt(0).toUpperCase();}
+  function col(){return (cfg&&cfg.primaryColor)||'#6C63FF';}
+  function letter(){return ((cfg&&cfg.avatarText)||(cfg&&cfg.name&&cfg.name[0])||'C').charAt(0).toUpperCase();}
   function adjustColor(hex,pct){var n=parseInt(hex.replace('#',''),16);var r=Math.min(255,Math.max(0,((n>>16)&0xff)+pct));var g=Math.min(255,Math.max(0,((n>>8)&0xff)+pct));var b=Math.min(255,Math.max(0,(n&0xff)+pct));return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);}
 
-  /* ── Markdown renderer ──────────────────────────────────────── */
+  /* ── Office hours detection ───────────────────────────────────── */
+  function isAfterHours(){
+    if(!cfg||!cfg.officeHoursEnabled||!cfg.officeHoursSchedule)return false;
+    var tz=cfg.officeHoursTimezone||'America/New_York';
+    try{
+      var now=new Date();
+      var parts=new Intl.DateTimeFormat('en-US',{timeZone:tz,weekday:'long',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(now);
+      var dayName='';var hours=0;var minutes=0;
+      parts.forEach(function(p){
+        if(p.type==='weekday')dayName=p.value.toLowerCase();
+        if(p.type==='hour')hours=parseInt(p.value,10);
+        if(p.type==='minute')minutes=parseInt(p.value,10);
+      });
+      var sched=cfg.officeHoursSchedule[dayName];
+      if(!sched)return false;
+      if(sched.closed)return true;
+      var cur=hours*60+minutes;
+      var op=(sched.open||'09:00').split(':');
+      var cl=(sched.close||'18:00').split(':');
+      var openM=parseInt(op[0],10)*60+parseInt(op[1],10);
+      var closeM=parseInt(cl[0],10)*60+parseInt(cl[1],10);
+      return cur<openM||cur>=closeM;
+    }catch(e){return false;}
+  }
+
+  /* ── After-hours flow ─────────────────────────────────────────── */
+  function startAfterHoursFlow(){
+    afterHoursFlow={step:'name',name:'',phone:'',reason:''};
+    var ahMsg=(cfg&&cfg.afterHoursMessage)||"We\\'re currently closed! I\\'ve noted your message and our team will reach out first thing tomorrow. You can also call us and leave a voicemail! \uD83D\uDE0A";
+    showTypingThen(function(){
+      addMsg('assistant',ahMsg);
+      setTimeout(function(){
+        showTypingThen(function(){
+          addMsg('assistant',"I\\'d love to take down your info so we can reach you. What\\'s your name?");
+        },600);
+      },700);
+    },800);
+  }
+
+  function showTypingThen(cb,delay){
+    showTyping();
+    setTimeout(function(){hideTyping();cb();},delay||800);
+  }
+
+  function handleAfterHoursInput(text){
+    if(!afterHoursFlow)return;
+    if(afterHoursFlow.step==='name'){
+      afterHoursFlow.name=text;
+      afterHoursFlow.step='phone';
+      showTypingThen(function(){
+        addMsg('assistant','Thanks, '+text+'! What\\'s the best number to reach you?');
+      },600);
+    } else if(afterHoursFlow.step==='phone'){
+      afterHoursFlow.phone=text;
+      afterHoursFlow.step='reason';
+      showTypingThen(function(){
+        addMsg('assistant','Got it! And briefly — what can we help you with?');
+      },600);
+    } else if(afterHoursFlow.step==='reason'){
+      afterHoursFlow.reason=text;
+      afterHoursFlow.step='submitting';
+      setInputDisabled(true);
+      showTyping();
+      var today=new Date().toISOString().split('T')[0];
+      apiFetch('/api/widget/'+BOT_ID+'/booking',{
+        method:'POST',
+        body:JSON.stringify({
+          sessionId:SESSION_ID,
+          name:afterHoursFlow.name,
+          phone:afterHoursFlow.phone,
+          service:afterHoursFlow.reason,
+          date:today,
+          timePreference:'After Hours',
+          status:'after_hours'
+        })
+      }).then(function(){
+        hideTyping();
+        addMsg('assistant','Thank you, '+afterHoursFlow.name+'! \uD83D\uDE4F We\\'ve saved your info and our team will reach out as soon as we\\'re back open. Have a great day!');
+        afterHoursFlow={step:'done',name:'',phone:'',reason:''};
+        playSound();
+      }).catch(function(){
+        hideTyping();
+        addMsg('assistant','Thank you for reaching out! Our team will get back to you as soon as we\\'re open again. \uD83D\uDE0A');
+        afterHoursFlow={step:'done',name:'',phone:'',reason:''};
+      });
+    }
+  }
+
+  /* ── Markdown renderer ──────────────────────────────────────────── */
   function renderMd(text){
     var s=text
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -499,16 +630,12 @@ router.get("/widget.js", async (req, res) => {
       +'<div id="_cb_qa"></div>'
       +'<div id="_cb_foot">'
         +'<div id="_cb_form">'
-          +'<button id="_cb_att" aria-label="Attach image" title="Attach image" style="flex-shrink:0;border:none;background:transparent;cursor:pointer;padding:4px;display:flex;align-items:center;color:#94a3b8;transition:color 0.15s">'
-            +'<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>'
-          +'</button>'
-          +'<input id="_cb_file" type="file" accept="image/*" style="display:none"/>'
           +'<input id="_cb_inp" type="text" placeholder="Type a message\u2026" aria-label="Your message" maxlength="1000"/>'
           +'<button id="_cb_snd" aria-label="Send message">'
             +'<svg fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
           +'</button>'
         +'</div>'
-        +'<div id="_cb_pw" style="display:none">Powered by <a id="_cb_pw_a" href="https://botbuilder.app" target="_blank" rel="noopener">BotBuilder</a></div>'
+        +'<div id="_cb_pw" style="display:none">Powered by <a id="_cb_pw_a" href="https://cluvi.app" target="_blank" rel="noopener">Cluvi</a></div>'
       +'</div>'
     +'</div>'
     +'<button id="_cb_btn" aria-label="Open chat" aria-expanded="false">'
@@ -525,8 +652,6 @@ router.get("/widget.js", async (req, res) => {
       qa_el=document.getElementById('_cb_qa'),
       inp=document.getElementById('_cb_inp'),
       snd=document.getElementById('_cb_snd'),
-      att=document.getElementById('_cb_att'),
-      fileEl=document.getElementById('_cb_file'),
       head=document.getElementById('_cb_head'),
       pw_el=document.getElementById('_cb_pw'),
       pw_a=document.getElementById('_cb_pw_a'),
@@ -553,8 +678,8 @@ router.get("/widget.js", async (req, res) => {
   function buildBranding(){
     if(cfg.showBranding!==false){
       pw_el.style.display='block';
-      var label=cfg.brandingText||'BotBuilder';
-      var url=cfg.brandingUrl||'https://botbuilder.app';
+      var label=cfg.brandingText||'Cluvi';
+      var url=cfg.brandingUrl||'https://cluvi.app';
       pw_a.textContent=label;
       pw_a.href=url;
     }
@@ -574,11 +699,11 @@ router.get("/widget.js", async (req, res) => {
     if(document.getElementById('_cb_lead'))return;
     var d=document.createElement('div');d.id='_cb_lead';
     d.innerHTML=
-      '<div class="_cb_lead_hd">👋 Welcome! Quick intro</div>'
+      '<div class="_cb_lead_hd">\uD83D\uDC4B Welcome! Quick intro</div>'
       +'<div class="_cb_lead_sub">Tell us who you are before we start — it helps us serve you better. No pressure, you can skip.</div>'
       +'<input class="_cb_lead_inp" id="_cb_ln" type="text" placeholder="Your name" autocomplete="name"/>'
       +'<input class="_cb_lead_inp" id="_cb_le" type="email" placeholder="Your email (optional)" autocomplete="email"/>'
-      +'<button class="_cb_lead_btn" id="_cb_lgo">Start chatting →</button>'
+      +'<button class="_cb_lead_btn" id="_cb_lgo">Start chatting \u2192</button>'
       +'<div class="_cb_lead_skip" id="_cb_lsk">Skip</div>';
     msgs_el.style.position='relative';
     msgs_el.appendChild(d);
@@ -605,7 +730,7 @@ router.get("/widget.js", async (req, res) => {
       hidePh();
       addMsg('assistant',cfg.welcomeMessage||'Hi! How can I help you today?');
       if(cfg.quickActions&&cfg.quickActions.length)renderQA(cfg.quickActions);
-      if(cfg.leadCaptureEnabled)showLeadForm();
+      if(cfg.showWelcomeForm||cfg.leadCaptureEnabled)showLeadForm();
       scheduleProactive();
     }).catch(function(){
       head.innerHTML='<div style="color:white;font-weight:600;padding:4px">Chat Assistant</div>';
@@ -649,26 +774,6 @@ router.get("/widget.js", async (req, res) => {
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
-  function addImageMsg(role,src,filename){
-    hidePh();
-    var c=col();
-    var d=document.createElement('div');
-    d.className='_cb_msg'+(role==='user'?' _u':'');
-    var inner='';
-    if(role==='assistant'){inner+='<div class="_cb_mav" style="background:'+c+'">'+letter()+'</div>';}
-    inner+='<div>';
-    inner+='<div class="_cb_bub '+(role==='user'?'_cb_user':'_cb_bot')+'"'
-      +(role==='user'?' style="background:'+c+';padding:6px"':' style="padding:6px"')+'>'
-      +'<img src="'+src+'" alt="'+(filename||'image')+'" style="max-width:180px;max-height:160px;border-radius:8px;display:block;cursor:pointer" onclick="window.open(this.src)">'
-      +'<span style="display:block;font-size:10px;opacity:0.7;margin-top:4px;text-align:center">'+(filename||'image')+'</span>'
-      +'</div>';
-    inner+='<div class="_cb_ts">'+fmtTime()+'</div>';
-    inner+='</div>';
-    d.innerHTML=inner;
-    msgs_el.appendChild(d);
-    setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
-  }
-
   function showTyping(){
     var c=col();
     var d=document.createElement('div');
@@ -680,19 +785,19 @@ router.get("/widget.js", async (req, res) => {
   }
 
   function hideTyping(){var t=document.getElementById('_cb_typing');if(t)t.remove();}
-  function setInputDisabled(v){inp.disabled=v;snd.disabled=v;att.disabled=v;}
+  function setInputDisabled(v){inp.disabled=v;snd.disabled=v;}
 
   function sendToAI(attempt){
     attempt=attempt||1;
     loading=true;
     setInputDisabled(true);
     showTyping();
-    var delay=400+Math.random()*600;
     apiFetch('/api/widget/'+BOT_ID+'/chat',{method:'POST',body:JSON.stringify({messages:msgs,sessionId:SESSION_ID})})
       .then(function(d){
+        var r=d.message||((cfg&&cfg.fallbackMessage)||"I\\'m having trouble connecting right now. Please try again in a moment or call us directly!");
+        var delay=Math.min(2500,Math.max(800,r.length*20+Math.random()*400));
         setTimeout(function(){
           hideTyping();
-          var r=d.message||((cfg&&cfg.fallbackMessage)||'Sorry, something went wrong.');
           msgs.push({role:'assistant',content:r});
           addMsg('assistant',r);
           playSound();
@@ -708,11 +813,11 @@ router.get("/widget.js", async (req, res) => {
         } else {
           setTimeout(function(){
             hideTyping();
-            var fb=(cfg&&cfg.fallbackMessage)||'Sorry, please try again later.';
+            var fb="I\\'m having trouble connecting right now. Please try again in a moment or call us directly!";
             msgs.push({role:'assistant',content:fb});
             addMsg('assistant',fb);
             loading=false;setInputDisabled(false);
-          },delay);
+          },800);
         }
       });
   }
@@ -720,38 +825,34 @@ router.get("/widget.js", async (req, res) => {
   function send(text){
     if(!text||!text.trim()||loading)return;
     if(msgCount>=MAX_MSGS){addMsg('assistant','Message limit reached. Please refresh to continue.');return;}
+
+    /* After-hours flow in progress */
+    if(afterHoursFlow!==null){
+      if(afterHoursFlow.step==='done'||afterHoursFlow.step==='submitting')return;
+      addMsg('user',text.trim());msgCount++;
+      handleAfterHoursInput(text.trim());inp.value='';return;
+    }
+
+    /* Booking flow in progress */
     if(booking!==null){
       addMsg('user',text.trim());msgCount++;
       handleBookingInput(text.trim());inp.value='';return;
     }
+
     qa_el.innerHTML='';msgCount++;
     msgs.push({role:'user',content:text.trim()});
     addMsg('user',text.trim());inp.value='';
+
+    /* Check after-hours BEFORE calling AI */
+    if(isAfterHours()){
+      startAfterHoursFlow();
+      return;
+    }
+
     var low=text.toLowerCase();
     if(low.indexOf('book')>=0||low.indexOf('appointment')>=0||low.indexOf('schedule')>=0){startBooking();return;}
     sendToAI();
   }
-
-  /* ── Image upload ──────────────────────────────────────────── */
-  att.onclick=function(){fileEl.click();};
-  att.onmouseenter=function(){att.style.color=col();};
-  att.onmouseleave=function(){att.style.color='#94a3b8';};
-  fileEl.onchange=function(){
-    var file=fileEl.files&&fileEl.files[0];
-    if(!file)return;
-    if(file.size>5*1024*1024){addMsg('assistant','Please attach images smaller than 5 MB.');fileEl.value='';return;}
-    var reader=new FileReader();
-    reader.onload=function(e){
-      var dataUrl=e.target.result;
-      addImageMsg('user',dataUrl,file.name);
-      msgCount++;
-      var textNote='[User attached image: '+file.name+']';
-      msgs.push({role:'user',content:textNote});
-      fileEl.value='';
-      if(!loading)sendToAI();
-    };
-    reader.readAsDataURL(file);
-  };
 
   /* ── Booking flow ──────────────────────────────────────────── */
   function startBooking(){
@@ -827,12 +928,12 @@ router.get("/widget.js", async (req, res) => {
   function showTimeBtns(){
     var c=col();var rgb=hexToRgb(c);
     var cont=document.createElement('div');cont.className='_cb_wr';
-    [['Morning','\u2600\ufe0f Morning'],['Afternoon','\uD83C\uDF24\uFE0F Afternoon'],['Evening','\uD83C\uDF19 Evening']].forEach(function(t){
+    [['\u2600\uFE0F Morning','Morning'],['\uD83C\uDF24\uFE0F Afternoon','Afternoon'],['\uD83C\uDF19 Evening','Evening']].forEach(function(t){
       var b=document.createElement('button');b.className='_cb_qbtn';
-      b.textContent=t[1];b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
+      b.textContent=t[0];b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
       b.onclick=function(){
-        cont.remove();addMsg('user',t[0]);
-        booking.time=t[0];booking.step='confirm';
+        cont.remove();addMsg('user',t[1]);
+        booking.time=t[1];booking.step='confirm';
         setTimeout(function(){showSummary();},350);
       };
       cont.appendChild(b);
@@ -842,7 +943,7 @@ router.get("/widget.js", async (req, res) => {
   }
 
   function showEmailInput(){
-    var c=col();var rgb=hexToRgb(c);
+    var c=col();
     var cont=document.createElement('div');cont.className='_cb_wr';cont.style.alignItems='center';
     var ei=document.createElement('input');ei.type='email';ei.placeholder='your@email.com';
     ei.style.cssText='border:1.5px solid #e2e8f0;border-radius:10px;padding:8px 12px;font-size:13px;color:#1e293b;outline:none;background:#fff;flex:1;min-width:0';
@@ -917,7 +1018,6 @@ router.get("/widget.js", async (req, res) => {
   inp.onkeydown=function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send(inp.value);}};
 
   /* ── Boot: schedule proactive only after config is known ───── */
-  /* We prime the config fetch here so proactive timing is accurate */
   apiFetch('/api/widget/'+BOT_ID+'/config').then(function(c){
     if(c.message||isOpen||initialized)return;
     cfg=c;
@@ -930,7 +1030,7 @@ router.get("/widget.js", async (req, res) => {
     setTheme(col());
   }).catch(function(){});
 
-  setTheme('#6366f1');
+  setTheme('#6C63FF');
 })();`;
 
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");

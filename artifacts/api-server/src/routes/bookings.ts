@@ -33,7 +33,7 @@ router.put("/bookings/:id", requireAuth, async (req, res) => {
   try {
     const userId = req.session.userId!;
     const { status } = req.body as { status: string };
-    const allowed = ["pending", "confirmed", "cancelled"];
+    const allowed = ["pending", "confirmed", "cancelled", "after_hours"];
     if (!allowed.includes(status)) {
       res.status(400).json({ message: "Invalid status" });
       return;
