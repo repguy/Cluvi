@@ -967,23 +967,24 @@ router.get("/widget.js", async (req, res) => {
       }
     }
     var slots=[];
-    for(var h=openH;h<closeH;h++){slots.push(h+':00');if(h<closeH-1||openH===closeH-1)slots.push(h+':30');}
-    var wrap=document.createElement('div');wrap.className='_cb_wr';
-    wrap.style.cssText='max-height:130px;overflow-y:auto;gap:6px;padding:8px 14px;flex-wrap:wrap';
+    for(var h=openH;h<closeH;h++){slots.push(h+':00');slots.push(h+':30');}
+    /* Render in the qa bar (pinned above the input) so it never overflows the widget */
+    qa_el.innerHTML='';
+    qa_el.style.cssText='display:flex;flex-wrap:wrap;gap:5px;padding:8px 12px;max-height:116px;overflow-y:auto;background:#f8fafc;border-top:1px solid #eff2f5;flex-shrink:0';
     slots.forEach(function(slot){
       var dt=new Date('2000-01-01T'+slot+':00');
       var label=dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
       var b=document.createElement('button');b.className='_cb_qbtn';
       b.textContent=label;b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
-      b.style.padding='6px 11px';b.style.fontSize='12px';
+      b.style.padding='5px 10px';b.style.fontSize='11.5px';
       b.onclick=function(){
-        wrap.remove();addMsg('user',label);
+        qa_el.innerHTML='';qa_el.style.cssText='';
+        addMsg('user',label);
         booking.time=label;booking.step='email';
         setTimeout(function(){addMsg('assistant','Almost done! Would you like a confirmation email? Enter your email or tap Skip.');showEmailInput();},350);
       };
-      wrap.appendChild(b);
+      qa_el.appendChild(b);
     });
-    msgs_el.appendChild(wrap);
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
