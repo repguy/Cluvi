@@ -104,7 +104,7 @@ router.get("/widget/:publicId/config", async (req, res) => {
       res.status(403).json({ message: "Domain not allowed" }); return;
     }
 
-    const ap = bot.appearance as Record<string, unknown>;
+    const ap = bot.appearance as unknown as Record<string, unknown>;
 
     res.json({
       name: ap.botName || bot.name,
@@ -254,12 +254,13 @@ router.post("/widget/:publicId/booking", async (req, res) => {
       status: isAfterHours ? "after_hours" : "pending",
     }).returning();
 
-    const nc = bot.notificationsConfig;
-    const businessName = (bot.appearance as Record<string, unknown>).botName as string || bot.name;
-    const ownerEmail = (bot.appearance as Record<string, unknown>).ownerEmail as string;
+    const nc = bot.notificationsConfig as unknown as Record<string, unknown>;
+    const appearance = bot.appearance as unknown as Record<string, unknown>;
+    const businessName = (appearance.botName as string) || bot.name;
+    const ownerEmail = appearance.ownerEmail as string;
 
     const resendApiKey = process.env.RESEND_API_KEY;
-    const resendFromEmail = process.env.RESEND_FROM_EMAIL || (nc as Record<string, unknown>)?.resendFromEmail as string || "bookings@cluvi.app";
+    const resendFromEmail = process.env.RESEND_FROM_EMAIL || (nc.resendFromEmail as string) || "bookings@cluvi.app";
     const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
     const twilioFromPhone = process.env.TWILIO_FROM_PHONE;
@@ -270,10 +271,8 @@ router.post("/widget/:publicId/booking", async (req, res) => {
     const notifEmoji = isAfterHours ? "\uD83C\uDF19" : "\uD83D\uDD14";
 
     (async () => {
-      const ncMap = nc as Record<string, unknown>;
-
       // ── Owner email via Resend ────────────────────────────────────────────
-      if (ncMap?.resendEnabled && resendApiKey && ownerEmail) {
+      if (nc.resendEnabled && resendApiKey && ownerEmail) {
         try {
           await fetch("https://api.resend.com/emails", {
             method: "POST",
@@ -289,7 +288,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
       }
 
       // ── Customer confirmation email via Resend ────────────────────────────
-      if (!isAfterHours && ncMap?.resendEnabled && resendApiKey && customerEmail) {
+      if (!isAfterHours && nc.resendEnabled && resendApiKey && customerEmail) {
         try {
           await fetch("https://api.resend.com/emails", {
             method: "POST",
@@ -305,15 +304,15 @@ router.post("/widget/:publicId/booking", async (req, res) => {
       }
 
       // ── Owner SMS via Twilio ──────────────────────────────────────────────
-      if (ncMap?.twilioEnabled && twilioAccountSid && twilioAuthToken && ncMap.twilioOwnerPhone) {
+      if (nc.twilioEnabled && twilioAccountSid && twilioAuthToken && nc.twilioOwnerPhone) {
         try {
           const creds = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64");
           await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${creds}` },
             body: new URLSearchParams({
-              To: ncMap.twilioOwnerPhone as string,
-              From: twilioFromPhone || ncMap.twilioOwnerPhone as string,
+              To: nc.twilioOwnerPhone as string,
+              From: twilioFromPhone || (nc.twilioOwnerPhone as string),
               Body: isAfterHours
                 ? `${notifEmoji} After Hours Lead at ${businessName}: ${name} | ${phone} | Reason: ${service}`
                 : `New booking at ${businessName}: ${name} | ${phone} | ${service} | ${date} | ${timePreference}`
@@ -323,15 +322,15 @@ router.post("/widget/:publicId/booking", async (req, res) => {
       }
 
       // ── Owner WhatsApp via Twilio ─────────────────────────────────────────
-      if (ncMap?.twilioWhatsappEnabled && twilioAccountSid && twilioAuthToken && ncMap.twilioWhatsappTo) {
+      if (nc.twilioWhatsappEnabled && twilioAccountSid && twilioAuthToken && nc.twilioWhatsappTo) {
         try {
           const creds = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64");
           await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${creds}` },
             body: new URLSearchParams({
-              To: ncMap.twilioWhatsappTo as string,
-              From: ncMap.twilioWhatsappFrom as string || twilioWhatsappFrom,
+              To: nc.twilioWhatsappTo as string,
+              From: (nc.twilioWhatsappFrom as string) || twilioWhatsappFrom,
               Body: isAfterHours
                 ? `${notifEmoji} After Hours Lead at ${businessName}!\n\n\uD83D\uDC64 ${name}\n\uD83D\uDCDE ${phone}\n\uD83D\uDCAC Reason: ${service}`
                 : `\uD83D\uDD14 New Booking at ${businessName}!\n\n\uD83D\uDC64 ${name}\n\uD83D\uDCDE ${phone}\n\uD83D\uDED1\uFE0F ${service}\n\uD83D\uDCC5 ${date} ${timePreference}`
@@ -341,13 +340,13 @@ router.post("/widget/:publicId/booking", async (req, res) => {
       }
 
       // ── Telegram ─────────────────────────────────────────────────────────
-      if (ncMap?.telegramEnabled && ncMap.telegramBotToken && ncMap.telegramChatId) {
+      if (nc.telegramEnabled && nc.telegramBotToken && nc.telegramChatId) {
         try {
-          await fetch(`https://api.telegram.org/bot${ncMap.telegramBotToken}/sendMessage`, {
+          await fetch(`https://api.telegram.org/bot${nc.telegramBotToken}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              chat_id: ncMap.telegramChatId,
+              chat_id: nc.telegramChatId,
               text: isAfterHours
                 ? `${notifEmoji} After Hours Lead at ${businessName}!\n\n\uD83D\uDC64 Name: ${name}\n\uD83D\uDCDE Phone: ${phone}\n\uD83D\uDCAC Reason: ${service}\n\nPlease reach out when you open! \u2600\uFE0F`
                 : `\uD83D\uDD14 New Booking at ${businessName}!\n\n\uD83D\uDC64 Name: ${name}\n\uD83D\uDCDE Phone: ${phone}\n\uD83D\uDED1\uFE0F Service: ${service}\n\uD83D\uDCC5 Date: ${date}\n\uD83D\uDD50 Time: ${timePreference}\n\nReply to confirm! \u2705`,
@@ -358,7 +357,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
       }
 
       // ── Discord webhook ───────────────────────────────────────────────────
-      if (ncMap?.discordEnabled && ncMap.discordWebhookUrl) {
+      if (nc.discordEnabled && nc.discordWebhookUrl) {
         try {
           const fields = isAfterHours
             ? [
@@ -373,7 +372,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
                 { name: "\uD83D\uDCC5 Date", value: date, inline: true },
                 { name: "\uD83D\uDD50 Time", value: timePreference, inline: true },
               ];
-          await fetch(ncMap.discordWebhookUrl as string, {
+          await fetch(nc.discordWebhookUrl as string, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
