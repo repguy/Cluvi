@@ -540,16 +540,43 @@ router.get("/widget.js", async (req, res) => {
 
   /* ── After-hours flow ─────────────────────────────────────────── */
   function startAfterHoursFlow(){
-    afterHoursFlow={step:'name',name:'',phone:'',reason:''};
+    afterHoursFlow={step:'choice',name:'',phone:'',reason:''};
     var ahMsg=(cfg&&cfg.afterHoursMessage)||"We\\'re currently closed! I\\'ve noted your message and our team will reach out first thing tomorrow. You can also call us and leave a voicemail! \uD83D\uDE0A";
     showTypingThen(function(){
       addMsg('assistant',ahMsg);
       setTimeout(function(){
         showTypingThen(function(){
-          addMsg('assistant',"I\\'d love to take down your info so we can reach you. What\\'s your name?");
+          addMsg('assistant','How can I help you?');
+          showAfterHoursOptions();
         },600);
       },700);
     },800);
+  }
+
+  function showAfterHoursOptions(){
+    var c=col();var rgb=hexToRgb(c);
+    var cont=document.createElement('div');cont.id='_cb_ah_opts';cont.className='_cb_wr';
+    [['\uD83D\uDCC5 Book an Appointment','book'],['\u2709\uFE0F Leave a Message','message']].forEach(function(opt){
+      var b=document.createElement('button');b.className='_cb_qbtn';
+      b.textContent=opt[0];b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
+      b.onclick=function(){
+        cont.remove();addMsg('user',opt[0]);
+        if(opt[1]==='book'){
+          afterHoursFlow=null;
+          booking={step:'name',name:'',phone:'',service:'',date:'',time:'',email:'',isAfterHours:true};
+          qa_el.innerHTML='';
+          setTimeout(function(){addMsg('assistant','I\\'d love to schedule an appointment for you! We\\'ll confirm it when we open. First, what\\'s your name?');},350);
+        } else {
+          afterHoursFlow={step:'name',name:'',phone:'',reason:''};
+          showTypingThen(function(){
+            addMsg('assistant','I\\'d love to take down your info so we can reach you. What\\'s your name?');
+          },600);
+        }
+      };
+      cont.appendChild(b);
+    });
+    msgs_el.appendChild(cont);
+    setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
   function showTypingThen(cb,delay){
@@ -559,6 +586,7 @@ router.get("/widget.js", async (req, res) => {
 
   function handleAfterHoursInput(text){
     if(!afterHoursFlow)return;
+    if(afterHoursFlow.step==='choice')return;
     if(afterHoursFlow.step==='name'){
       afterHoursFlow.name=text;
       afterHoursFlow.step='phone';
@@ -878,10 +906,10 @@ router.get("/widget.js", async (req, res) => {
       setTimeout(function(){addMsg('assistant','Great choice! What date works for you?');showDatePicker();},350);
     } else if(booking.step==='date'){
       booking.date=text;booking.step='time';
-      setTimeout(function(){addMsg('assistant','Almost done! Do you prefer morning or afternoon?');showTimeBtns();},350);
+      setTimeout(function(){addMsg('assistant','Pick a time that works for you:');showTimeSlots();},350);
     } else if(booking.step==='time'){
       booking.time=text;booking.step='email';
-      setTimeout(function(){addMsg('assistant','Last thing — would you like a confirmation email? If yes, enter your email address. Otherwise tap Skip.');showEmailInput();},350);
+      setTimeout(function(){addMsg('assistant','Almost done! Would you like a confirmation email? Enter your email or tap Skip.');showEmailInput();},350);
     } else if(booking.step==='email'){
       booking.email=text==='skip'?'':text;booking.step='confirm';
       setTimeout(function(){showSummary();},350);
@@ -918,27 +946,45 @@ router.get("/widget.js", async (req, res) => {
       var fmt=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
       cont.remove();addMsg('user',fmt);
       booking.date=di.value;booking.step='time';
-      setTimeout(function(){addMsg('assistant','Almost done! Do you prefer morning or afternoon?');showTimeBtns();},350);
+      setTimeout(function(){addMsg('assistant','Pick a time that works for you:');showTimeSlots();},350);
     };
     cont.appendChild(di);cont.appendChild(pb);
     msgs_el.appendChild(cont);
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
-  function showTimeBtns(){
+  function showTimeSlots(){
     var c=col();var rgb=hexToRgb(c);
-    var cont=document.createElement('div');cont.className='_cb_wr';
-    [['\u2600\uFE0F Morning','Morning'],['\uD83C\uDF24\uFE0F Afternoon','Afternoon'],['\uD83C\uDF19 Evening','Evening']].forEach(function(t){
+    var openH=9,closeH=17;
+    if(cfg&&cfg.officeHoursEnabled&&cfg.officeHoursSchedule&&booking&&booking.date){
+      var dayNames=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+      var d=new Date(booking.date+'T12:00:00');
+      var dayName=dayNames[d.getDay()];
+      var sched=cfg.officeHoursSchedule[dayName];
+      if(sched&&!sched.closed){
+        var op=(sched.open||'09:00').split(':');
+        var cl=(sched.close||'17:00').split(':');
+        openH=parseInt(op[0],10);closeH=parseInt(cl[0],10);
+      }
+    }
+    var slots=[];
+    for(var h=openH;h<closeH;h++){slots.push(h+':00');if(h<closeH-1||openH===closeH-1)slots.push(h+':30');}
+    var wrap=document.createElement('div');wrap.className='_cb_wr';
+    wrap.style.cssText='max-height:130px;overflow-y:auto;gap:6px;padding:8px 14px;flex-wrap:wrap';
+    slots.forEach(function(slot){
+      var dt=new Date('2000-01-01T'+slot+':00');
+      var label=dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
       var b=document.createElement('button');b.className='_cb_qbtn';
-      b.textContent=t[0];b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
+      b.textContent=label;b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
+      b.style.padding='6px 11px';b.style.fontSize='12px';
       b.onclick=function(){
-        cont.remove();addMsg('user',t[1]);
-        booking.time=t[1];booking.step='confirm';
-        setTimeout(function(){showSummary();},350);
+        wrap.remove();addMsg('user',label);
+        booking.time=label;booking.step='email';
+        setTimeout(function(){addMsg('assistant','Almost done! Would you like a confirmation email? Enter your email or tap Skip.');showEmailInput();},350);
       };
-      cont.appendChild(b);
+      wrap.appendChild(b);
     });
-    msgs_el.appendChild(cont);
+    msgs_el.appendChild(wrap);
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
   }
 
@@ -982,11 +1028,14 @@ router.get("/widget.js", async (req, res) => {
   }
 
   function confirmBooking(){
+    var isAH=!!(booking&&booking.isAfterHours);
     apiFetch('/api/widget/'+BOT_ID+'/booking',{
       method:'POST',
-      body:JSON.stringify({sessionId:SESSION_ID,name:booking.name,phone:booking.phone,service:booking.service,date:booking.date,timePreference:booking.time,email:booking.email||undefined})
+      body:JSON.stringify({sessionId:SESSION_ID,name:booking.name,phone:booking.phone,service:booking.service,date:booking.date,timePreference:booking.time,email:booking.email||undefined,status:isAH?'after_hours':undefined})
     }).then(function(){
-      var msg=(cfg&&cfg.bookingConfirmationMessage)||'Your appointment is confirmed! We\\'ll be in touch shortly. \uD83C\uDF89';
+      var msg=isAH
+        ? '\uD83D\uDCC5 Your appointment request for **'+booking.time+'** has been saved! We\\'re currently closed, but we\\'ll confirm it with you as soon as we open. See you soon!'
+        : ((cfg&&cfg.bookingConfirmationMessage)||'Your appointment is confirmed! We\\'ll be in touch shortly. \uD83C\uDF89');
       addMsg('assistant',msg);booking=null;playSound();
     }).catch(function(){
       addMsg('assistant','Oops, something went wrong. Please call us directly to schedule.');booking=null;
