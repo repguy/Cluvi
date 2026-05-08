@@ -55,6 +55,7 @@ export interface BotAppearance {
 
 export interface NotificationsConfig {
   resendEnabled: boolean;
+  resendApiKey: string;
   resendFromEmail: string;
   twilioEnabled: boolean;
   twilioOwnerPhone: string;

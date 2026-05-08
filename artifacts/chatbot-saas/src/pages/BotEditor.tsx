@@ -113,6 +113,7 @@ const DEFAULT_APPEARANCE: BotAppearance = {
 
 const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
   resendEnabled: false,
+  resendApiKey: "",
   resendFromEmail: "",
   twilioEnabled: false,
   twilioOwnerPhone: "",
@@ -1053,12 +1054,27 @@ export default function BotEditor() {
                 <NotifCard
                   icon="📧" title="Email Notification" description="Get an email when a booking comes in"
                   enabled={notifications.resendEnabled} onToggle={(v) => updateNotifications("resendEnabled", v)}
-                  hint="Just enter the business owner's email in the Booking tab → Owner Contact. No Resend account needed — Cluvi handles all email delivery."
+                  hint="Create a free account at resend.com, copy your API key, and paste it below. Make sure the owner email is set in the Booking tab."
                   hintKey="email" expandedHints={expandedHints} setExpandedHints={setExpandedHints}
                 >
-                  <p className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 border border-slate-100">
-                    Owner email is set in the <strong>Booking</strong> tab → Owner Contact section.
-                    Cluvi sends all emails using its own Resend account — no setup required.
+                  <Field label="Resend API Key" helper="Get yours free at resend.com — takes 2 minutes">
+                    <Input
+                      type="password"
+                      value={notifications.resendApiKey ?? ""}
+                      onChange={(e) => updateNotifications("resendApiKey", e.target.value)}
+                      placeholder="re_..."
+                      autoComplete="off"
+                    />
+                  </Field>
+                  <Field label="From Email" helper='Must be a verified domain in Resend (e.g. "bookings@yourdomain.com")'>
+                    <Input
+                      value={notifications.resendFromEmail ?? ""}
+                      onChange={(e) => updateNotifications("resendFromEmail", e.target.value)}
+                      placeholder="bookings@yourdomain.com"
+                    />
+                  </Field>
+                  <p className="text-xs text-slate-500 bg-amber-50 rounded-lg p-3 border border-amber-100">
+                    ⚠️ The owner email is set in the <strong>Booking</strong> tab → Owner Contact section. Both the API key and owner email must be filled for emails to send.
                   </p>
                 </NotifCard>
 
