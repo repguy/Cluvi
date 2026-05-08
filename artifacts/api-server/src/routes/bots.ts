@@ -1,3 +1,4 @@
+import { testEmailTemplate } from "../lib/emailTemplates";
 import { Router } from "express";
 import { db, botsTable, conversationsTable, bookingsTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
@@ -161,7 +162,7 @@ router.post("/bots/:id/test-email", requireAuth, async (req, res) => {
         from: fromEmail,
         to: [ownerEmail],
         subject: `✅ Test email — ${bot.name}`,
-        html: `<div style="font-family:sans-serif;max-width:480px"><h2>🎉 It's working!</h2><p>This is a test email from your Cluvi bot <b>${bot.name}</b>.</p><p>Email notifications are configured correctly. You'll receive a message like this every time a new booking comes in.</p><hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0"><p style="color:#64748b;font-size:12px">Sent from Cluvi — powered by Resend</p></div>`,
+        html: testEmailTemplate(bot.name),
       }),
     });
 

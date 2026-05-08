@@ -1,3 +1,4 @@
+import { ownerBookingEmail, customerConfirmationEmail } from "../lib/emailTemplates";
 import { Router } from "express";
 import { db, botsTable, conversationsTable, bookingsTable, leadsTable } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
@@ -281,7 +282,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
               from: resendFromEmail,
               to: [ownerEmail],
               subject: notifSubject,
-              html: `<h2>${notifLabel}</h2><p><b>Name:</b> ${name}</p><p><b>Phone:</b> ${phone}</p><p><b>${isAfterHours ? "Reason" : "Service"}:</b> ${service}</p>${!isAfterHours ? `<p><b>Date:</b> ${date}</p><p><b>Time:</b> ${timePreference}</p>` : ""}${isAfterHours ? "<p style='color:#6C63FF;font-weight:bold'>This is an after-hours lead — please reach out when you open.</p>" : ""}`
+              html: ownerBookingEmail({ businessName, name, phone, email: customerEmail, service, date, timePreference, isAfterHours })
             })
           });
         } catch { /* ignore */ }
@@ -297,7 +298,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
               from: resendFromEmail,
               to: [customerEmail],
               subject: `Your appointment at ${businessName} is confirmed!`,
-              html: `<div style="font-family:sans-serif;max-width:500px"><h2>You're booked! 🎉</h2><p>Hi ${name}, thanks for booking with <b>${businessName}</b>.</p><table style="border-collapse:collapse;width:100%"><tr><td style="padding:6px 0;color:#555">Service:</td><td style="padding:6px 0;font-weight:600">${service}</td></tr><tr><td style="padding:6px 0;color:#555">Date:</td><td style="padding:6px 0;font-weight:600">${date}</td></tr><tr><td style="padding:6px 0;color:#555">Time:</td><td style="padding:6px 0;font-weight:600">${timePreference}</td></tr><tr><td style="padding:6px 0;color:#555">Phone:</td><td style="padding:6px 0;font-weight:600">${phone}</td></tr></table><p style="margin-top:16px">We'll call to confirm your appointment soon.</p><p>See you! — ${businessName} Team</p></div>`
+              html: customerConfirmationEmail({ businessName, name, phone, service, date, timePreference })
             })
           });
         } catch { /* ignore */ }
