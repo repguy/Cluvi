@@ -1,5 +1,16 @@
 const BASE = "/api";
 
+export async function testBotEmail(botId: string): Promise<{ ok: boolean; sentTo: string }> {
+  const res = await fetch(`${BASE}/bots/${botId}/test-email`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+  });
+  const data = await res.json() as { ok?: boolean; sentTo?: string; message?: string };
+  if (!res.ok) throw new Error(data.message || "Failed to send test email");
+  return data as { ok: boolean; sentTo: string };
+}
+
 async function req<T>(
   path: string,
   options: RequestInit = {},
@@ -55,7 +66,6 @@ export interface BotAppearance {
 
 export interface NotificationsConfig {
   resendEnabled: boolean;
-  resendApiKey: string;
   resendFromEmail: string;
   twilioEnabled: boolean;
   twilioOwnerPhone: string;

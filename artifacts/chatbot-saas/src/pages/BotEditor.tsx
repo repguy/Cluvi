@@ -8,7 +8,7 @@ import {
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { api, Bot as BotType, BotAppearance, NotificationsConfig, BotStats, OfficeHoursSchedule } from "../lib/api";
+import { api, testBotEmail, Bot as BotType, BotAppearance, NotificationsConfig, BotStats, OfficeHoursSchedule } from "../lib/api";
 import Layout from "../components/Layout";
 
 const PROVIDERS = [
@@ -113,7 +113,6 @@ const DEFAULT_APPEARANCE: BotAppearance = {
 
 const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
   resendEnabled: false,
-  resendApiKey: "",
   resendFromEmail: "",
   twilioEnabled: false,
   twilioOwnerPhone: "",
@@ -356,6 +355,7 @@ export default function BotEditor() {
   const defaultTab = (new URLSearchParams(search).get("tab") as TabId) ?? "general";
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
   const [saving, setSaving] = useState(false);
+  const [testEmailState, setTestEmailState] = useState<{ status: "idle" | "loading" | "ok" | "error"; msg?: string }>({ status: "idle" });
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!isNew);
@@ -1054,28 +1054,50 @@ export default function BotEditor() {
                 <NotifCard
                   icon="📧" title="Email Notification" description="Get an email when a booking comes in"
                   enabled={notifications.resendEnabled} onToggle={(v) => updateNotifications("resendEnabled", v)}
-                  hint="Create a free account at resend.com, copy your API key, and paste it below. Make sure the owner email is set in the Booking tab."
+                  hint="The Resend API key is set once in the server .env file and shared across all bots. Set the owner email in the Booking tab to receive notifications."
                   hintKey="email" expandedHints={expandedHints} setExpandedHints={setExpandedHints}
                 >
-                  <Field label="Resend API Key" helper="Get yours free at resend.com — takes 2 minutes">
-                    <Input
-                      type="password"
-                      value={notifications.resendApiKey ?? ""}
-                      onChange={(e) => updateNotifications("resendApiKey", e.target.value)}
-                      placeholder="re_..."
-                      autoComplete="off"
-                    />
-                  </Field>
-                  <Field label="From Email" helper='Must be a verified domain in Resend (e.g. "bookings@yourdomain.com")'>
+                  <Field label="From Email" helper='Verified sender in Resend — leave blank to use the default Resend shared sender'>
                     <Input
                       value={notifications.resendFromEmail ?? ""}
                       onChange={(e) => updateNotifications("resendFromEmail", e.target.value)}
                       placeholder="bookings@yourdomain.com"
                     />
                   </Field>
-                  <p className="text-xs text-slate-500 bg-amber-50 rounded-lg p-3 border border-amber-100">
-                    ⚠️ The owner email is set in the <strong>Booking</strong> tab → Owner Contact section. Both the API key and owner email must be filled for emails to send.
+                  <p className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 border border-slate-100">
+                    Owner email is set in the <strong>Booking</strong> tab → Owner Contact. Make sure you've saved the bot before sending a test.
                   </p>
+                  {!isNew && (
+                    <div className="flex items-center gap-3 pt-1">
+                      <button
+                        type="button"
+                        disabled={testEmailState.status === "loading"}
+                        onClick={async () => {
+                          setTestEmailState({ status: "loading" });
+                          try {
+                            const r = await testBotEmail(bot.id);
+                            setTestEmailState({ status: "ok", msg: `Sent to ${r.sentTo}` });
+                            setTimeout(() => setTestEmailState({ status: "idle" }), 5000);
+                          } catch (e: unknown) {
+                            setTestEmailState({ status: "error", msg: e instanceof Error ? e.message : "Unknown error" });
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {testEmailState.status === "loading" ? (
+                          <><Loader2 className="w-3 h-3 animate-spin" /> Sending…</>
+                        ) : (
+                          <>📨 Send Test Email</>
+                        )}
+                      </button>
+                      {testEmailState.status === "ok" && (
+                        <span className="text-xs text-emerald-600 font-medium">✅ {testEmailState.msg}</span>
+                      )}
+                      {testEmailState.status === "error" && (
+                        <span className="text-xs text-red-600">{testEmailState.msg}</span>
+                      )}
+                    </div>
+                  )}
                 </NotifCard>
 
                 <NotifCard

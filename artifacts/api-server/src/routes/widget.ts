@@ -259,7 +259,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
     const businessName = (appearance.botName as string) || bot.name;
     const ownerEmail = appearance.ownerEmail as string;
 
-    const resendApiKey = (nc.resendApiKey as string) || process.env.RESEND_API_KEY || "";
+    const resendApiKey = process.env.RESEND_API_KEY || "";
     const resendFromEmail = (nc.resendFromEmail as string) || process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
     const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;

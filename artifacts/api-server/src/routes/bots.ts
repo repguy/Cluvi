@@ -139,6 +139,44 @@ router.post("/bots/:id/duplicate", requireAuth, async (req, res) => {
   }
 });
 
+router.post("/bots/:id/test-email", requireAuth, async (req, res) => {
+  try {
+    const [bot] = await db.select().from(botsTable).where(and(eq(botsTable.id, req.params.id), eq(botsTable.userId, req.session.userId!))).limit(1);
+    if (!bot) { res.status(404).json({ message: "Bot not found" }); return; }
+
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) { res.status(400).json({ message: "RESEND_API_KEY is not configured on the server. Add it to your .env file." }); return; }
+
+    const nc = bot.notificationsConfig as unknown as Record<string, unknown>;
+    const appearance = bot.appearance as unknown as Record<string, unknown>;
+    const ownerEmail = appearance.ownerEmail as string;
+    if (!ownerEmail) { res.status(400).json({ message: "Owner email is not set. Go to Booking tab → Owner Contact and save." }); return; }
+
+    const fromEmail = (nc.resendFromEmail as string) || process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [ownerEmail],
+        subject: `✅ Test email — ${bot.name}`,
+        html: `<div style="font-family:sans-serif;max-width:480px"><h2>🎉 It's working!</h2><p>This is a test email from your Cluvi bot <b>${bot.name}</b>.</p><p>Email notifications are configured correctly. You'll receive a message like this every time a new booking comes in.</p><hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0"><p style="color:#64748b;font-size:12px">Sent from Cluvi — powered by Resend</p></div>`,
+      }),
+    });
+
+    if (!r.ok) {
+      const body = await r.text();
+      res.status(400).json({ message: `Resend error: ${body}` }); return;
+    }
+
+    res.json({ ok: true, sentTo: ownerEmail });
+  } catch (err) {
+    req.log.error({ err }, "test email error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 router.get("/bots/:id/stats", requireAuth, async (req, res) => {
   try {
     const [bot] = await db.select({ id: botsTable.id }).from(botsTable).where(and(eq(botsTable.id, req.params.id), eq(botsTable.userId, req.session.userId!))).limit(1);
