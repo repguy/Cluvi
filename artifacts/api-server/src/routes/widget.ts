@@ -114,6 +114,7 @@ router.get("/widget/:publicId/config", async (req, res) => {
       fallbackMessage: ap.fallbackMessage,
       quickActions: (ap.quickActions as string[]) ?? [],
       avatarText: ap.avatarText || ((ap.botName || bot.name) as string)[0],
+      avatarUrl: (ap.avatarUrl as string) || "",
       businessType: ap.businessType,
       services: (ap.services as string[]) ?? [],
       bookingConfirmationMessage: (ap.bookingConfirmationMessage as string) || "",
@@ -669,6 +670,7 @@ router.get("/widget.js", async (req, res) => {
     +'</div>'
     +'<button id="_cb_btn" aria-label="Open chat" aria-expanded="false">'
       +'<span id="_cb_bdg">1</span>'
+      +'<img id="_cb_ico_logo" src="" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;display:none;pointer-events:none;"/>'
       +'<svg id="_cb_ico_chat" width="24" height="24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>'
       +'<svg id="_cb_ico_close" width="20" height="20" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" viewBox="0 0 24 24" style="display:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
     +'</button>';
@@ -684,6 +686,7 @@ router.get("/widget.js", async (req, res) => {
       head=document.getElementById('_cb_head'),
       pw_el=document.getElementById('_cb_pw'),
       pw_a=document.getElementById('_cb_pw_a'),
+      ico_logo=document.getElementById('_cb_ico_logo'),
       ico_chat=document.getElementById('_cb_ico_chat'),
       ico_close=document.getElementById('_cb_ico_close');
 
@@ -694,9 +697,19 @@ router.get("/widget.js", async (req, res) => {
     head.style.background='linear-gradient(135deg,'+c+' 0%,'+adjustColor(c,-22)+' 100%)';
   }
 
+  function av(size){
+    if(cfg&&cfg.avatarUrl){
+      return '<img src="'+cfg.avatarUrl+'" alt="bot" style="width:'+size+'px;height:'+size+'px;border-radius:50%;object-fit:cover;flex-shrink:0;display:block;border:2px solid rgba(255,255,255,0.3);box-shadow:0 2px 8px rgba(0,0,0,0.15)"/>';
+    }
+    return '<div class="_cb_mav" style="width:'+size+'px;height:'+size+'px;background:'+col()+';font-size:'+Math.round(size*0.38)+'px;">'+letter()+'</div>';
+  }
+
   function buildHead(){
+    var avHtml=cfg&&cfg.avatarUrl
+      ?'<img src="'+cfg.avatarUrl+'" alt="bot" id="_cb_head_av" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid rgba(255,255,255,0.3);box-shadow:0 2px 8px rgba(0,0,0,0.15)"/>'
+      :'<div id="_cb_head_av" style="background:rgba(255,255,255,0.2)">'+letter()+'</div>';
     head.innerHTML=''
-      +'<div id="_cb_head_av" style="background:rgba(255,255,255,0.2)">'+letter()+'</div>'
+      +avHtml
       +'<div><div class="_cb_hname">'+(cfg.name||'Assistant')+'</div>'
       +'<div class="_cb_hstatus"><span class="_cb_hdot"></span>Online now</div></div>'
       +'<button id="_cb_x" onclick="window._cbToggle()" aria-label="Close chat">'
@@ -754,6 +767,7 @@ router.get("/widget.js", async (req, res) => {
       if(c.message){return;}
       cfg=c;
       setTheme(col());
+      if(cfg.avatarUrl){ico_logo.src=cfg.avatarUrl;ico_logo.style.display='block';ico_chat.style.display='none';}
       buildHead();
       buildBranding();
       hidePh();
@@ -791,7 +805,7 @@ router.get("/widget.js", async (req, res) => {
     var d=document.createElement('div');
     d.className='_cb_msg'+(role==='user'?' _u':'');
     var inner='';
-    if(role==='assistant'){inner+='<div class="_cb_mav" style="background:'+c+'">'+letter()+'</div>';}
+    if(role==='assistant'){inner+=av(28);}
     inner+='<div>';
     var bubbleContent=isHtml?text:renderMd(text);
     inner+='<div class="_cb_bub '+(role==='user'?'_cb_user':'_cb_bot')
@@ -807,7 +821,7 @@ router.get("/widget.js", async (req, res) => {
     var c=col();
     var d=document.createElement('div');
     d.id='_cb_typing';d.className='_cb_dots_wrap';
-    d.innerHTML='<div class="_cb_mav" style="background:'+c+'">'+letter()+'</div>'
+    d.innerHTML=av(28)
       +'<div class="_cb_dots"><span></span><span></span><span></span></div>';
     msgs_el.appendChild(d);
     setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
@@ -1121,14 +1135,18 @@ router.get("/widget.js", async (req, res) => {
       win.classList.add('_open');
       btn.setAttribute('aria-expanded','true');
       bdg.style.display='none';
+      var hasLogo=cfg&&cfg.avatarUrl;
       ico_chat.style.display='none';
+      if(ico_logo)ico_logo.style.display='none';
       ico_close.style.display='block';
       setTimeout(function(){inp.focus();},240);
       if(!initialized){initialized=true;initConfig();}
     } else {
       win.classList.remove('_open');
       btn.setAttribute('aria-expanded','false');
-      ico_chat.style.display='block';
+      var hasLogo=cfg&&cfg.avatarUrl;
+      if(hasLogo){ico_logo.src=cfg.avatarUrl;ico_logo.style.display='block';ico_chat.style.display='none';}
+      else{ico_chat.style.display='block';}
       ico_close.style.display='none';
     }
   };

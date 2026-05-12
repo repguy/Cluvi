@@ -52,7 +52,7 @@ export interface OfficeHoursSchedule {
 
 export interface BotAppearance {
   primaryColor: string; botName: string; welcomeMessage: string; fallbackMessage: string;
-  tone: string; quickActions: string[]; avatarText: string; businessType: string;
+  tone: string; quickActions: string[]; avatarText: string; avatarUrl?: string; businessType: string;
   phone: string; email: string; address: string; ownerEmail: string; ownerPhone: string;
   services: string[]; bookingConfirmationMessage: string; officeHours: string;
   afterHoursMessage: string; soundEnabled: boolean;

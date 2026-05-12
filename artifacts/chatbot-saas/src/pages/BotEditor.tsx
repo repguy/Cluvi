@@ -90,6 +90,7 @@ const DEFAULT_APPEARANCE: BotAppearance = {
   tone: "friendly",
   quickActions: [],
   avatarText: "",
+  avatarUrl: "",
   businessType: "",
   phone: "",
   email: "",
@@ -723,14 +724,59 @@ export default function BotEditor() {
             {activeTab === "appearance" && (
               <>
                 <Section title="Branding">
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Bot Display Name">
-                      <Input value={appearance.botName} onChange={(e) => updateAppearance("botName", e.target.value)} placeholder={bot.name ?? "Assistant"} />
-                    </Field>
-                    <Field label="Avatar Text (1–2 chars)">
-                      <Input value={appearance.avatarText} onChange={(e) => updateAppearance("avatarText", e.target.value.slice(0, 2))} placeholder="AB" maxLength={2} />
-                    </Field>
-                  </div>
+                  <Field label="Bot Display Name">
+                    <Input value={appearance.botName} onChange={(e) => updateAppearance("botName", e.target.value)} placeholder={bot.name ?? "Assistant"} />
+                  </Field>
+
+                  <Field label="Bot Icon / Logo" helper="This image appears in the floating chat button on your website and in the chat header. Paste any public image URL (your logo, favicon, etc.).">
+                    <div className="space-y-3">
+                      {/* Live preview */}
+                      <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="relative flex-shrink-0">
+                          {appearance.avatarUrl ? (
+                            <img
+                              src={appearance.avatarUrl}
+                              alt="Bot icon preview"
+                              className="w-14 h-14 rounded-full object-cover border-2 shadow-md"
+                              style={{ borderColor: appearance.primaryColor }}
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            />
+                          ) : (
+                            <div
+                              className="w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-md"
+                              style={{ backgroundColor: appearance.primaryColor }}
+                            >
+                              {appearance.avatarText || (appearance.botName || bot.name || "C")[0]?.toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-700 mb-0.5">Preview</p>
+                          <p className="text-xs text-slate-400">This is how your bot button will look on your website.</p>
+                          {appearance.avatarUrl && (
+                            <button
+                              onClick={() => updateAppearance("avatarUrl", "")}
+                              className="text-xs text-red-500 hover:text-red-700 mt-1 transition-colors"
+                            >
+                              Remove image
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {/* URL input */}
+                      <Input
+                        type="url"
+                        value={appearance.avatarUrl ?? ""}
+                        onChange={(e) => updateAppearance("avatarUrl", e.target.value)}
+                        placeholder="https://your-site.com/logo.png"
+                      />
+                    </div>
+                  </Field>
+
+                  <Field label="Fallback Text (when no image)" helper="1–2 characters shown if no image URL is set above.">
+                    <Input value={appearance.avatarText} onChange={(e) => updateAppearance("avatarText", e.target.value.slice(0, 2))} placeholder="AB" maxLength={2} className="w-24" />
+                  </Field>
+
                   <Field label="Primary Color">
                     <div className="flex items-center gap-2.5">
                       <input type="color" value={appearance.primaryColor} onChange={(e) => updateAppearance("primaryColor", e.target.value)} className="w-10 h-10 rounded-lg border border-slate-200 cursor-pointer p-0.5 bg-white" />
