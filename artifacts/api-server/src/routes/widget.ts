@@ -777,7 +777,7 @@ router.get("/widget.js", async (req, res) => {
       b.onclick=function(){
         qa_el.innerHTML='';
         var low=qa.toLowerCase();
-        if(low.indexOf('book')>=0||low.indexOf('appoint')>=0||low.indexOf('schedul')>=0)startBooking();
+        if(low.indexOf('book')>=0||low.indexOf('appoint')>=0||low.indexOf('schedul')>=0||low.indexOf('reserv')>=0||low.indexOf('trial')>=0||low.indexOf('consult')>=0||low.indexOf('viewing')>=0||low.indexOf('session')>=0)startBooking();
         else send(qa);
       };
       qa_el.appendChild(b);
@@ -878,15 +878,48 @@ router.get("/widget.js", async (req, res) => {
     }
 
     var low=text.toLowerCase();
-    if(low.indexOf('book')>=0||low.indexOf('appointment')>=0||low.indexOf('schedule')>=0){startBooking();return;}
+    if(low.indexOf('book')>=0||low.indexOf('appointment')>=0||low.indexOf('schedule')>=0||low.indexOf('reserv')>=0||low.indexOf('reserve')>=0||low.indexOf('trial')>=0||low.indexOf('consult')>=0||low.indexOf('viewing')>=0){startBooking();return;}
     sendToAI();
   }
 
+  /* ── Business-type context helpers ────────────────────────── */
+  function btype(){return ((cfg&&cfg.businessType)||'').toLowerCase();}
+  function bookingNoun(){
+    var t=btype();
+    if(t.indexOf('restaurant')>=0)return 'reservation';
+    if(t.indexOf('law')>=0)return 'consultation';
+    if(t.indexOf('real estate')>=0||t.indexOf('realestate')>=0)return 'viewing';
+    if(t.indexOf('gym')>=0||t.indexOf('fitness')>=0)return 'session';
+    return 'appointment';
+  }
+  function serviceQuestion(){
+    var t=btype();
+    if(t.indexOf('restaurant')>=0)return 'What type of reservation? (e.g. Dinner, Lunch, Private Event)';
+    if(t.indexOf('law')>=0)return 'What type of consultation are you looking for?';
+    if(t.indexOf('real estate')>=0||t.indexOf('realestate')>=0)return 'What would you like to schedule? (e.g. Property Viewing, Home Valuation)';
+    if(t.indexOf('gym')>=0||t.indexOf('fitness')>=0)return 'Which class or session interests you?';
+    if(t.indexOf('salon')>=0||t.indexOf('spa')>=0)return 'Which service would you like to book?';
+    return 'What service are you looking for?';
+  }
+  function summaryServiceLabel(){
+    var t=btype();
+    if(t.indexOf('restaurant')>=0)return '\uD83C\uDF7D\uFE0F';
+    if(t.indexOf('law')>=0)return '\u2696\uFE0F';
+    if(t.indexOf('gym')>=0||t.indexOf('fitness')>=0)return '\uD83D\uDCAA';
+    if(t.indexOf('salon')>=0||t.indexOf('spa')>=0)return '\u2728';
+    return '\u2699\uFE0F';
+  }
+  function confirmationNoun(){return bookingNoun().charAt(0).toUpperCase()+bookingNoun().slice(1);}
+
   /* ── Booking flow ──────────────────────────────────────────── */
   function startBooking(){
+    var noun=bookingNoun();
     booking={step:'name',name:'',phone:'',service:'',date:'',time:'',email:''};
     qa_el.innerHTML='';
-    setTimeout(function(){addMsg('assistant','I\\'d love to book an appointment for you!\\nFirst, what\\'s your name?');},350);
+    var msg=btype().indexOf('restaurant')>=0
+      ? 'I\\'d love to make a reservation for you!\\nFirst, what name should the reservation be under?'
+      : 'I\\'d love to book a '+noun+' for you!\\nFirst, what\\'s your name?';
+    setTimeout(function(){addMsg('assistant',msg);},350);
   }
 
   function handleBookingInput(text){
@@ -898,7 +931,7 @@ router.get("/widget.js", async (req, res) => {
       booking.phone=text;booking.step='service';
       var svcs=(cfg&&cfg.services&&cfg.services.length)?cfg.services:[];
       setTimeout(function(){
-        addMsg('assistant','Got it! What service are you looking for?');
+        addMsg('assistant',serviceQuestion());
         if(svcs.length>0)showServiceBtns(svcs);
       },350);
     } else if(booking.step==='service'){
@@ -1014,10 +1047,12 @@ router.get("/widget.js", async (req, res) => {
     var d=new Date(booking.date+'T12:00:00');
     var ds=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
     var emailLine=booking.email?'\\n\uD83D\uDCE7 '+booking.email:'';
-    addMsg('assistant','\uD83D\uDCCB **Booking Summary**\\n\\n\uD83D\uDC64 '+booking.name+'\\n\uD83D\uDCDE '+booking.phone+'\\n\u2699\uFE0F '+booking.service+'\\n\uD83D\uDCC5 '+ds+'\\n\uD83D\uDD50 '+booking.time+emailLine);
+    var noun=bookingNoun();var svcIco=summaryServiceLabel();
+    var summaryTitle=btype().indexOf('restaurant')>=0?'Reservation Summary':'Booking Summary';
+    addMsg('assistant','\uD83D\uDCCB **'+summaryTitle+'**\\n\\n\uD83D\uDC64 '+booking.name+'\\n\uD83D\uDCDE '+booking.phone+'\\n'+svcIco+' '+booking.service+'\\n\uD83D\uDCC5 '+ds+'\\n\uD83D\uDD50 '+booking.time+emailLine);
     var cont=document.createElement('div');cont.className='_cb_wr';
     var cfm=document.createElement('button');cfm.className='_cb_qbtn';
-    cfm.textContent='\u2713 Confirm Booking';
+    cfm.textContent=btype().indexOf('restaurant')>=0?'\u2713 Confirm Reservation':'\u2713 Confirm Booking';
     cfm.style.cssText='background:'+c+';color:white;border-color:'+c+';font-weight:700';
     cfm.onclick=function(){cont.remove();addMsg('user','Confirm');confirmBooking();};
     var can=document.createElement('button');can.className='_cb_qbtn';
@@ -1036,7 +1071,7 @@ router.get("/widget.js", async (req, res) => {
     }).then(function(){
       var msg=isAH
         ? '\uD83D\uDCC5 Your appointment request for **'+booking.time+'** has been saved! We\\'re currently closed, but we\\'ll confirm it with you as soon as we open. See you soon!'
-        : ((cfg&&cfg.bookingConfirmationMessage)||'Your appointment is confirmed! We\\'ll be in touch shortly. \uD83C\uDF89');
+        : ((cfg&&cfg.bookingConfirmationMessage)||('Your '+bookingNoun()+' is confirmed! We\\'ll be in touch shortly. \uD83C\uDF89'));
       addMsg('assistant',msg);booking=null;playSound();
     }).catch(function(){
       addMsg('assistant','Oops, something went wrong. Please call us directly to schedule.');booking=null;
