@@ -259,6 +259,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
     const appearance = bot.appearance as unknown as Record<string, unknown>;
     const businessName = (appearance.botName as string) || bot.name;
     const ownerEmail = appearance.ownerEmail as string;
+    const businessType = (appearance.businessType as string) || "";
 
     const resendApiKey = process.env.RESEND_API_KEY || "";
     const resendFromEmail = (nc.resendFromEmail as string) || process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
@@ -282,7 +283,7 @@ router.post("/widget/:publicId/booking", async (req, res) => {
               from: resendFromEmail,
               to: [ownerEmail],
               subject: notifSubject,
-              html: ownerBookingEmail({ businessName, name, phone, email: customerEmail, service, date, timePreference, isAfterHours })
+              html: ownerBookingEmail({ businessName, businessType, name, phone, email: customerEmail, service, date, timePreference, isAfterHours })
             })
           });
         } catch { /* ignore */ }
@@ -297,8 +298,8 @@ router.post("/widget/:publicId/booking", async (req, res) => {
             body: JSON.stringify({
               from: resendFromEmail,
               to: [customerEmail],
-              subject: `Your appointment at ${businessName} is confirmed!`,
-              html: customerConfirmationEmail({ businessName, name, phone, service, date, timePreference })
+              subject: `Your ${businessType.toLowerCase().includes("restaurant") ? "reservation" : businessType.toLowerCase().includes("gym") || businessType.toLowerCase().includes("fitness") ? "session" : businessType.toLowerCase().includes("law") ? "consultation" : "appointment"} at ${businessName} is confirmed!`,
+              html: customerConfirmationEmail({ businessName, businessType, name, phone, service, date, timePreference })
             })
           });
         } catch { /* ignore */ }
@@ -935,8 +936,18 @@ router.get("/widget.js", async (req, res) => {
         if(svcs.length>0)showServiceBtns(svcs);
       },350);
     } else if(booking.step==='service'){
-      booking.service=text;booking.step='date';
-      setTimeout(function(){addMsg('assistant','Great choice! What date works for you?');showDatePicker();},350);
+      booking.service=text;
+      if(btype().indexOf('restaurant')>=0){
+        booking.step='party_size';
+        setTimeout(function(){addMsg('assistant','How many guests will be dining?');showPartySizeBtns();},350);
+      } else {
+        booking.step='date';
+        setTimeout(function(){addMsg('assistant','Great choice! What date works for you?');showDatePicker();},350);
+      }
+    } else if(booking.step==='party_size'){
+      booking.service=booking.service+' \u2014 Party of '+text;
+      booking.step='date';
+      setTimeout(function(){addMsg('assistant','Perfect! What date works for you?');showDatePicker();},350);
     } else if(booking.step==='date'){
       booking.date=text;booking.step='time';
       setTimeout(function(){addMsg('assistant','Pick a time that works for you:');showTimeSlots();},350);
@@ -957,8 +968,32 @@ router.get("/widget.js", async (req, res) => {
       b.textContent=s;b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
       b.onclick=function(){
         cont.remove();addMsg('user',s);
-        booking.service=s;booking.step='date';
-        setTimeout(function(){addMsg('assistant','Great choice! What date works for you?');showDatePicker();},350);
+        booking.service=s;
+        if(btype().indexOf('restaurant')>=0){
+          booking.step='party_size';
+          setTimeout(function(){addMsg('assistant','How many guests will be dining?');showPartySizeBtns();},350);
+        } else {
+          booking.step='date';
+          setTimeout(function(){addMsg('assistant','Great choice! What date works for you?');showDatePicker();},350);
+        }
+      };
+      cont.appendChild(b);
+    });
+    msgs_el.appendChild(cont);
+    setTimeout(function(){msgs_el.scrollTop=msgs_el.scrollHeight;},30);
+  }
+
+  function showPartySizeBtns(){
+    var c=col();var rgb=hexToRgb(c);
+    var cont=document.createElement('div');cont.className='_cb_wr';
+    ['1–2','3–4','5–6','7–8','9+'].forEach(function(size){
+      var b=document.createElement('button');b.className='_cb_qbtn';
+      b.textContent=size+' guests';b.style.borderColor='rgba('+rgb+',0.4)';b.style.color=c;
+      b.onclick=function(){
+        cont.remove();addMsg('user',size+' guests');
+        booking.service=booking.service+' \u2014 Party of '+size;
+        booking.step='date';
+        setTimeout(function(){addMsg('assistant','Perfect! What date works for you?');showDatePicker();},350);
       };
       cont.appendChild(b);
     });
